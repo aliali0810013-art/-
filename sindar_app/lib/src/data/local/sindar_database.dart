@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
 import 'package:sindar_core/sindar_core.dart';
 import 'package:sqflite/sqflite.dart';
@@ -104,6 +106,38 @@ class SindarDatabase {
       );
       return current;
     });
+  }
+
+  Future<LicensePolicy> getLicensePolicy() async {
+    final db = await database;
+    final rows = await db.query(
+      'app_settings',
+      columns: ['setting_value'],
+      where: 'setting_key = ?',
+      whereArgs: ['license_policy'],
+      limit: 1,
+    );
+    if (rows.isEmpty) return LicensePolicy.lockedDefault;
+
+    try {
+      final decoded = jsonDecode(rows.first['setting_value']! as String);
+      if (decoded is! Map<String, dynamic>) return LicensePolicy.lockedDefault;
+      return LicensePolicy.fromJson(decoded);
+    } on FormatException {
+      return LicensePolicy.lockedDefault;
+    }
+  }
+
+  Future<void> saveLicensePolicy(LicensePolicy policy) async {
+    final db = await database;
+    await db.insert(
+      'app_settings',
+      {
+        'setting_key': 'license_policy',
+        'setting_value': jsonEncode(policy.toJson()),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<void> close() async {

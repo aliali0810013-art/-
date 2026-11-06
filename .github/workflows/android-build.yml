@@ -43,6 +43,23 @@ jobs:
         working-directory: ${{ matrix.app }}
         run: flutter create --platforms=android --org com.sindar --project-name ${{ matrix.app }} .
 
+      - name: Patch Android permissions
+        working-directory: ${{ matrix.app }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("android/app/src/main/AndroidManifest.xml")
+          text = path.read_text()
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          permissions = (
+              '\n    <uses-permission android:name="android.permission.CAMERA" />'
+              '\n    <uses-permission android:name="android.permission.INTERNET" />'
+          )
+          if 'android.permission.CAMERA' not in text:
+              text = text.replace(marker, marker + permissions)
+          path.write_text(text)
+          PY
+
       - name: Resolve dependencies
         working-directory: ${{ matrix.app }}
         run: flutter pub get
@@ -50,6 +67,11 @@ jobs:
       - name: Analyze
         working-directory: ${{ matrix.app }}
         run: flutter analyze
+
+      - name: Resolve shared core
+        if: matrix.app == 'sindar_app'
+        working-directory: packages/sindar_core
+        run: dart pub get
 
       - name: Test shared core
         if: matrix.app == 'sindar_app'

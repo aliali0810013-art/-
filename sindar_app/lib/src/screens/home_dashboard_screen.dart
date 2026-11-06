@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../theme/app_theme.dart';
 import 'chart_of_accounts_screen.dart';
+import 'document_studio_screen.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
   const HomeDashboardScreen({super.key});
@@ -60,7 +61,12 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                           const SizedBox(height: 18),
                           _KpiGrid(desktop: desktop, data: _kpis),
                           const SizedBox(height: 20),
-                          _QuickActions(desktop: desktop),
+                          _QuickActions(
+                            desktop: desktop,
+                            onInvoiceTap: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(builder: (_) => const DocumentStudioScreen()),
+                            ),
+                          ),
                           const SizedBox(height: 20),
                           _ModulesGrid(
                             desktop: desktop,
@@ -353,8 +359,9 @@ class _KpiCard extends StatelessWidget {
 }
 
 class _QuickActions extends StatelessWidget {
-  const _QuickActions({required this.desktop});
+  const _QuickActions({required this.desktop, required this.onInvoiceTap});
   final bool desktop;
+  final VoidCallback onInvoiceTap;
 
   @override
   Widget build(BuildContext context) {
@@ -380,7 +387,10 @@ class _QuickActions extends StatelessWidget {
             child: Row(
               children: [
                 for (var i = 0; i < actions.length; i++) ...[
-                  SizedBox(width: itemWidth, child: _ActionCard(data: actions[i])),
+                  GestureDetector(
+                    onTap: i == 0 ? onInvoiceTap : null,
+                    child: SizedBox(width: itemWidth, child: _ActionCard(data: actions[i])),
+                  ),
                   if (i != actions.length - 1) const SizedBox(width: 12),
                 ],
               ],
