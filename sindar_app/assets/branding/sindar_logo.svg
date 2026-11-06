@@ -1,0 +1,32 @@
+<svg width="1100" height="390" viewBox="0 0 1100 390" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="navy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0D2C54"/>
+      <stop offset="1" stop-color="#071D38"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F5B041"/>
+      <stop offset="1" stop-color="#D79A12"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="390" fill="none"/>
+  <g transform="translate(25,40)">
+    <path d="M90 20h210l68 70-50 210H104C45 300 9 251 23 193L55 70C64 39 78 27 90 20z" fill="url(#navy)"/>
+    <path d="M103 48h167l42 44-42 170H103c-36 0-58-32-49-68l30-118c5-19 11-25 19-28z" fill="#FFFFFF"/>
+    <path d="M270 48l42 44-19 76c-5 18-22 30-41 30h-19l37-150z" fill="url(#gold)"/>
+    <rect x="112" y="95" width="108" height="15" rx="6" fill="#0D2C54"/>
+    <rect x="105" y="129" width="118" height="15" rx="6" fill="#0D2C54"/>
+    <rect x="100" y="166" width="134" height="12" rx="5" fill="#9AA9BC"/>
+    <rect x="102" y="201" width="66" height="12" rx="5" fill="#9AA9BC"/>
+    <rect x="113" y="238" width="31" height="43" rx="3" fill="#E5A93C"/>
+    <rect x="154" y="219" width="31" height="62" rx="3" fill="#E5A93C"/>
+    <rect x="195" y="187" width="31" height="94" rx="3" fill="#E5A93C"/>
+    <path d="M39 293c73 57 202 55 307-22-91 103-231 132-326 73-38-23-36-57 19-51z" fill="url(#gold)" opacity=".95"/>
+    <path d="M65 278c69 38 176 32 269-29-75 85-187 109-270 72-43-19-44-42 1-43z" fill="url(#navy)"/>
+  </g>
+  <text x="425" y="198" fill="url(#navy)" font-size="154" font-weight="800" font-family="Arial, sans-serif">سندار</text>
+  <text x="515" y="288" fill="#0D2C54" font-size="72" font-weight="700" letter-spacing="28" font-family="Arial, sans-serif">SINDAR</text>
+  <rect x="402" y="326" width="78" height="5" rx="2.5" fill="#E5A93C"/>
+  <text x="505" y="342" fill="#0D2C54" font-size="30" font-weight="700" font-family="Arial, sans-serif">فواتيرك، مستنداتك، حساباتك... في مكان واحد</text>
+  <rect x="1010" y="326" width="65" height="5" rx="2.5" fill="#E5A93C"/>
+</svg>

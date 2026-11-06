@@ -1,0 +1,62 @@
+name: Android APK Build
+
+on:
+  push:
+    branches:
+      - sindar-phase1
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - sindar_app
+          - sindar_admin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate Android host project
+        working-directory: ${{ matrix.app }}
+        run: |
+          if [ ! -d android ]; then
+            flutter create --platforms=android --org com.sindar --project-name ${{ matrix.app }} .
+          fi
+      - name: Resolve dependencies
+        working-directory: ${{ matrix.app }}
+        run: flutter pub get
+      - name: Analyze
+        working-directory: ${{ matrix.app }}
+        run: flutter analyze
+      - name: Test
+        working-directory: ${{ matrix.app }}
+        run: flutter test
+      - name: Build release APK
+        working-directory: ${{ matrix.app }}
+        run: flutter build apk --release
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-apk
+          path: ${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
