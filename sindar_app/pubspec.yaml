@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  sindar_core:
+    path: ../packages/sindar_core
   cupertino_icons: ^1.0.8
   flutter_svg: ^2.0.17
   google_fonts: ^6.2.1

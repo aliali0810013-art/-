@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../theme/app_theme.dart';
+import 'chart_of_accounts_screen.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
   const HomeDashboardScreen({super.key});
@@ -61,7 +62,17 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                           const SizedBox(height: 20),
                           _QuickActions(desktop: desktop),
                           const SizedBox(height: 20),
-                          _ModulesGrid(desktop: desktop, modules: _modules),
+                          _ModulesGrid(
+                            desktop: desktop,
+                            modules: _modules,
+                            onTap: (module) {
+                              if (module.label.contains('شجرة')) {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(builder: (_) => const ChartOfAccountsScreen()),
+                                );
+                              }
+                            },
+                          ),
                           const SizedBox(height: 20),
                           const _RecentTransactions(),
                         ]),
@@ -411,9 +422,10 @@ class _ActionCard extends StatelessWidget {
 }
 
 class _ModulesGrid extends StatelessWidget {
-  const _ModulesGrid({required this.desktop, required this.modules});
+  const _ModulesGrid({required this.desktop, required this.modules, required this.onTap});
   final bool desktop;
   final List<_ModuleData> modules;
+  final ValueChanged<_ModuleData> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -427,14 +439,15 @@ class _ModulesGrid extends StatelessWidget {
         mainAxisSpacing: 12,
         childAspectRatio: desktop ? 1.24 : 1.16,
       ),
-      itemBuilder: (context, index) => _ModuleCard(data: modules[index]),
+      itemBuilder: (context, index) => _ModuleCard(data: modules[index], onTap: () => onTap(modules[index])),
     );
   }
 }
 
 class _ModuleCard extends StatelessWidget {
-  const _ModuleCard({required this.data});
+  const _ModuleCard({required this.data, required this.onTap});
   final _ModuleData data;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -442,7 +455,7 @@ class _ModuleCard extends StatelessWidget {
       color: Colors.white,
       borderRadius: BorderRadius.circular(22),
       child: InkWell(
-        onTap: () {},
+        onTap: onTap,
         borderRadius: BorderRadius.circular(22),
         child: Container(
           decoration: BoxDecoration(
@@ -578,7 +591,7 @@ class _BottomNav extends StatelessWidget {
     ];
 
     return Container(
-      height: 92,
+      height: 104,
       decoration: const BoxDecoration(
         gradient: LinearGradient(colors: [Color(0xFF061D38), Color(0xFF0A3763)]),
         borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
@@ -589,22 +602,22 @@ class _BottomNav extends StatelessWidget {
         children: List.generate(items.length, (index) {
           if (index == 2) {
             return Transform.translate(
-              offset: const Offset(0, -22),
+              offset: const Offset(0, -14),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   GestureDetector(
                     onTap: () => onChanged(index),
                     child: Container(
-                      width: 70,
-                      height: 70,
+                      width: 64,
+                      height: 64,
                       decoration: BoxDecoration(
                         color: AppColors.gold2,
                         shape: BoxShape.circle,
                         border: Border.all(color: const Color(0xFFFFD36A), width: 2),
                         boxShadow: const [BoxShadow(color: Color(0x44F5B041), blurRadius: 16, offset: Offset(0, 6))],
                       ),
-                      child: const Icon(Icons.add_rounded, color: AppColors.navy, size: 45),
+                      child: const Icon(Icons.add_rounded, color: AppColors.navy, size: 40),
                     ),
                   ),
                   const SizedBox(height: 4),
