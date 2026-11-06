@@ -979,6 +979,16 @@ class ErpRepository {
     });
   }
 
+  Future<List<Map<String, Object?>>> listQuotations() async {
+    final db = await SindarDatabase.instance.database;
+    return db.query(
+      'documents',
+      where: 'type = ?',
+      whereArgs: ['quotation'],
+      orderBy: 'date DESC',
+    );
+  }
+
   Future<int> convertQuotationToInvoice(
     int quotationId, {
     required bool onCredit,
