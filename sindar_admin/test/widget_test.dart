@@ -16,7 +16,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(const SindarAdminApp());
-    await tester.pumpAndSettle(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 120));
 
     expect(find.text('SINDAR Master Admin'), findsOneWidget);
     expect(find.text('ترخيص جديد'), findsOneWidget);

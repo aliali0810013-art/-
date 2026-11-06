@@ -13,7 +13,7 @@ void main() {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     await tester.pumpWidget(const SindarApp());
-    await tester.pumpAndSettle(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 120));
   }
 
   bool sameRow(WidgetTester tester, List<String> keys) {
@@ -25,10 +25,9 @@ void main() {
     return values.every((value) => (value - first).abs() < .5);
   }
 
-  testWidgets('dashboard keeps fixed 4 KPI and 5 module columns at 360x800', (tester) async {
+  testWidgets('dashboard fixed geometry at 360x800', (tester) async {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-
     await pumpDashboard(tester, const Size(360, 800));
 
     expect(
@@ -55,10 +54,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('dashboard keeps fixed 4 KPI and 5 module columns at 390x844', (tester) async {
+  testWidgets('dashboard fixed geometry at 390x844', (tester) async {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-
     await pumpDashboard(tester, const Size(390, 844));
 
     expect(

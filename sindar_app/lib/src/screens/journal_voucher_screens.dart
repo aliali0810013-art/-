@@ -8,8 +8,23 @@ import '../data/local/sindar_database.dart';
 import '../services/document_pdf_service.dart';
 import '../services/erp_repository.dart';
 import '../services/operational_models.dart';
+import '../services/session_controller.dart';
 import '../services/party_statement_pdf_service.dart';
 import 'document_studio_screen.dart';
+
+Future<bool> _requireOperationPermission(
+  BuildContext context,
+  String module,
+  String action,
+) async {
+  final allowed = await SessionController.instance.can(module, action: action);
+  if (!allowed && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('ليست لديك صلاحية لتنفيذ هذه العملية')),
+    );
+  }
+  return allowed;
+}
 
 class JournalOperationsScreen extends StatefulWidget {
   const JournalOperationsScreen({super.key});
@@ -55,6 +70,7 @@ class _JournalOperationsScreenState extends State<JournalOperationsScreen>
   }
 
   Future<void> _saveQuick() async {
+    if (!await _requireOperationPermission(context, 'journals', 'approve')) return;
     final amount = double.tryParse(_amount.text) ?? 0;
     if (_fromAccount == null || _toAccount == null || amount <= 0) return;
     try {
@@ -150,6 +166,7 @@ class _JournalOperationsScreenState extends State<JournalOperationsScreen>
   }
 
   Future<void> _saveCompound() async {
+    if (!await _requireOperationPermission(context, 'journals', 'approve')) return;
     final draft = JournalDraft(
       date: DateTime.now().toUtc(),
       description: _description.text.trim().isEmpty
@@ -326,10 +343,14 @@ class VoucherScreen extends StatefulWidget {
 
 class _VoucherScreenState extends State<VoucherScreen> {
   List<PartyRecord> _parties = const [];
+  List<Map<String, Object?>> _outstanding = const [];
   LicensePolicy _policy = LicensePolicy.lockedDefault;
   int? _partyId;
-  final _amount = TextEditingController();
-  final _notes = TextEditingController();
+  int? _linkedDocumentId;
+  String _settlementAccountCode = '1101';
+  final List<_VoucherLineInput> _lines = [
+    _VoucherLineInput(description: 'دفعة مالية', amount: ''),
+  ];
 
   @override
   void initState() {
@@ -339,8 +360,9 @@ class _VoucherScreenState extends State<VoucherScreen> {
 
   @override
   void dispose() {
-    _amount.dispose();
-    _notes.dispose();
+    for (final line in _lines) {
+      line.dispose();
+    }
     super.dispose();
   }
 
@@ -363,8 +385,57 @@ class _VoucherScreenState extends State<VoucherScreen> {
     return null;
   }
 
+  double get _total => _lines.fold<double>(
+        0,
+        (sum, line) => sum + (double.tryParse(line.amount.text) ?? 0),
+      );
+
+  Future<void> _loadOutstanding(int? partyId) async {
+    if (partyId == null) {
+      if (mounted) setState(() => _outstanding = const []);
+      return;
+    }
+    final rows = await ErpRepository.instance.outstandingDocuments(
+      partyId,
+      receivable: widget.receipt,
+    );
+    if (!mounted) return;
+    setState(() => _outstanding = rows);
+  }
+
+  void _setSingleLine(String description, double amount) {
+    for (final line in _lines) {
+      line.dispose();
+    }
+    _lines
+      ..clear()
+      ..add(
+        _VoucherLineInput(
+          description: description,
+          amount: amount.toStringAsFixed(2),
+        ),
+      );
+  }
+
+  String _notesText() {
+    return _lines
+        .where((line) => (double.tryParse(line.amount.text) ?? 0) > 0)
+        .map(
+          (line) =>
+              '${line.description.text.trim().isEmpty ? 'دفعة' : line.description.text.trim()}: ${line.amount.text}',
+        )
+        .join(' | ');
+  }
+
   Future<void> _save() async {
-    final amount = double.tryParse(_amount.text) ?? 0;
+    if (!await _requireOperationPermission(
+      context,
+      'documents',
+      'approve',
+    )) {
+      return;
+    }
+    final amount = _total;
     if (amount <= 0) return;
     try {
       await ErpRepository.instance.createVoucher(
@@ -372,20 +443,25 @@ class _VoucherScreenState extends State<VoucherScreen> {
         amount: amount,
         partyId: _party?.id,
         partyName: _party?.name,
-        notes: _notes.text,
+        linkedDocumentId: _linkedDocumentId,
+        notes: _notesText(),
+        settlementAccountCode: _settlementAccountCode,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             widget.receipt
-                ? 'تم إنشاء سند القبض وترحيل القيد'
-                : 'تم إنشاء سند الصرف وترحيل القيد',
+                ? 'تم إنشاء سند القبض وترحيل القيد وتحديث الفاتورة المرتبطة'
+                : 'تم إنشاء سند الصرف وترحيل القيد وتحديث الفاتورة المرتبطة',
           ),
         ),
       );
-      _amount.clear();
-      _notes.clear();
+      setState(() {
+        _linkedDocumentId = null;
+        _setSingleLine('دفعة مالية', 0);
+      });
+      await _loadOutstanding(_partyId);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -395,7 +471,14 @@ class _VoucherScreenState extends State<VoucherScreen> {
   }
 
   Future<void> _preview() async {
-    final amount = double.tryParse(_amount.text) ?? 0;
+    if (!await _requireOperationPermission(
+      context,
+      'documents',
+      'print',
+    )) {
+      return;
+    }
+    final amount = _total;
     if (amount <= 0) return;
     final draft = DocumentDraft(
       type: widget.receipt
@@ -409,15 +492,22 @@ class _VoucherScreenState extends State<VoucherScreen> {
         commercialRegistration: '1010101010',
       ),
       lines: [
-        DocumentLine(
-          description: _notes.text.trim().isEmpty ? 'دفعة مالية' : _notes.text.trim(),
-          quantity: 1,
-          unitPrice: amount,
-        ),
+        for (final line in _lines)
+          if ((double.tryParse(line.amount.text) ?? 0) > 0)
+            DocumentLine(
+              description: line.description.text.trim().isEmpty
+                  ? 'دفعة مالية'
+                  : line.description.text.trim(),
+              quantity: 1,
+              unitPrice: double.tryParse(line.amount.text) ?? 0,
+            ),
       ],
       contacts: const [],
       identity: const DocumentIdentity(),
       partyName: _party?.name,
+      notes: _linkedDocumentId == null
+          ? null
+          : 'مرتبط بالمستند رقم $_linkedDocumentId',
     );
     final bytes = await const DocumentPdfService().build(
       draft: draft,
@@ -429,6 +519,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
   @override
   Widget build(BuildContext context) {
     final title = widget.receipt ? 'سند قبض' : 'سند صرف';
+    final total = _total;
     return Scaffold(
       appBar: AppBar(title: Text(title)),
       body: ListView(
@@ -441,44 +532,188 @@ class _VoucherScreenState extends State<VoucherScreen> {
               labelText: widget.receipt ? 'العميل' : 'المورد',
             ),
             items: [
-              const DropdownMenuItem<int?>(value: null, child: Text('بدون ربط بطرف')),
+              const DropdownMenuItem<int?>(
+                value: null,
+                child: Text('بدون ربط بطرف'),
+              ),
               for (final party in _parties)
-                DropdownMenuItem<int?>(value: party.id, child: Text(party.name)),
+                DropdownMenuItem<int?>(
+                  value: party.id,
+                  child: Text(party.name),
+                ),
             ],
-            onChanged: (value) => setState(() => _partyId = value),
+            onChanged: (value) async {
+              setState(() {
+                _partyId = value;
+                _linkedDocumentId = null;
+              });
+              await _loadOutstanding(value);
+            },
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(
+            key: ValueKey(_settlementAccountCode),
+            initialValue: _settlementAccountCode,
+            decoration: InputDecoration(
+              labelText: widget.receipt ? 'حساب التحصيل' : 'حساب السداد',
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: '1101',
+                child: Text('الصندوق / نقدي'),
+              ),
+              DropdownMenuItem(
+                value: '1102',
+                child: Text('الحساب البنكي'),
+              ),
+            ],
+            onChanged: (value) {
+              if (value != null) {
+                setState(() => _settlementAccountCode = value);
+              }
+            },
+          ),
+          if (_partyId != null) ...[
+            const SizedBox(height: 10),
+            DropdownButtonFormField<int?>(
+              key: ValueKey(_linkedDocumentId),
+              initialValue: _linkedDocumentId,
+              decoration: InputDecoration(
+                labelText: widget.receipt
+                    ? 'ربط بفاتورة مبيعات غير مسددة'
+                    : 'ربط بفاتورة مشتريات غير مسددة',
+              ),
+              items: [
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('بدون ربط بفاتورة'),
+                ),
+                for (final document in _outstanding)
+                  DropdownMenuItem<int?>(
+                    value: document['id']! as int,
+                    child: Text(
+                      '${document['number']} — متبقي ${(document['outstanding'] as num).toDouble().toStringAsFixed(2)}',
+                    ),
+                  ),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _linkedDocumentId = value;
+                  if (value != null) {
+                    final document = _outstanding.firstWhere(
+                      (row) => row['id'] == value,
+                    );
+                    _setSingleLine(
+                      'سداد ${document['number']}',
+                      (document['outstanding'] as num).toDouble(),
+                    );
+                  }
+                });
+              },
+            ),
+          ],
+          const SizedBox(height: 14),
+          const Text(
+            'جدول الدفعات',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4F7FA),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    'البيان',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'المبلغ',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                SizedBox(width: 40),
+              ],
+            ),
+          ),
+          const SizedBox(height: 5),
+          for (var index = 0; index < _lines.length; index++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      controller: _lines[index].description,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        hintText: 'بيان الدفعة',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _lines[index].amount,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        suffixText: _policy.currencySymbol,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'حذف السطر',
+                    onPressed: _lines.length == 1
+                        ? null
+                        : () => setState(() {
+                              _lines[index].dispose();
+                              _lines.removeAt(index);
+                            }),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
+              ),
+            ),
+          OutlinedButton.icon(
+            onPressed: () => setState(
+              () => _lines.add(
+                _VoucherLineInput(description: '', amount: ''),
+              ),
+            ),
+            icon: const Icon(Icons.add),
+            label: const Text('إضافة دفعة / سطر'),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _amount,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: 'المبلغ ' + _policy.currencySymbol,
+          Card(
+            child: ListTile(
+              title: Text(
+                'الإجمالي: ${total.toStringAsFixed(2)} ${_policy.currencySymbol}',
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: Text(
+                'التفقيط: ${ArabicAmountInWords.spell(total, currencyName: _currencyName(_policy.currencyCode))}',
+              ),
             ),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _notes,
-            minLines: 3,
-            maxLines: 5,
-            decoration: const InputDecoration(labelText: 'البيان / جدول الدفعة'),
-          ),
-          const SizedBox(height: 10),
-          ValueListenableBuilder<TextEditingValue>(
-            valueListenable: _amount,
-            builder: (_, value, __) {
-              final amount = double.tryParse(value.text) ?? 0;
-              return Text(
-                'التفقيط: ' + ArabicAmountInWords.spell(amount),
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              );
-            },
-          ),
-          const SizedBox(height: 18),
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _preview,
+                  onPressed: total <= 0 ? null : _preview,
                   icon: const Icon(Icons.picture_as_pdf_outlined),
                   label: const Text('معاينة PDF'),
                 ),
@@ -486,9 +721,9 @@ class _VoucherScreenState extends State<VoucherScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _save,
+                  onPressed: total <= 0 ? null : _save,
                   icon: const Icon(Icons.save_outlined),
-                  label: Text('حفظ ' + title),
+                  label: Text('حفظ $title'),
                 ),
               ),
             ],
@@ -496,6 +731,29 @@ class _VoucherScreenState extends State<VoucherScreen> {
         ],
       ),
     );
+  }
+
+  String _currencyName(String code) => switch (code) {
+        'SAR' => 'ريال',
+        'YER' => 'ريال',
+        'USD' => 'دولار',
+        _ => code,
+      };
+}
+
+class _VoucherLineInput {
+  _VoucherLineInput({
+    required String description,
+    required String amount,
+  })  : description = TextEditingController(text: description),
+        amount = TextEditingController(text: amount);
+
+  final TextEditingController description;
+  final TextEditingController amount;
+
+  void dispose() {
+    description.dispose();
+    amount.dispose();
   }
 }
 
@@ -530,6 +788,7 @@ class _MoreDocumentsScreenState extends State<MoreDocumentsScreen> {
   }
 
   Future<void> _claim() async {
+    if (!await _requireOperationPermission(context, 'documents', 'print')) return;
     final customer = _customer;
     if (customer == null) return;
     final invoices = await ErpRepository.instance.unpaidInvoices(customer.id);
@@ -560,7 +819,9 @@ class _MoreDocumentsScreenState extends State<MoreDocumentsScreen> {
               trailing: const Icon(Icons.chevron_left),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => const DocumentStudioScreen(),
+                  builder: (_) => const DocumentStudioScreen(
+                    initialType: DocumentType.officialLetter,
+                  ),
                 ),
               ),
             ),

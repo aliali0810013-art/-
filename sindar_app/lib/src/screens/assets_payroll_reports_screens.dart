@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../data/local/sindar_database.dart';
 import '../services/erp_repository.dart';
 import '../services/operational_models.dart';
+import '../services/session_controller.dart';
 
 class AssetsAndCustodyScreen extends StatefulWidget {
   const AssetsAndCustodyScreen({super.key});
@@ -36,9 +37,14 @@ class _AssetsAndCustodyScreenState extends State<AssetsAndCustodyScreen> {
   }
 
   Future<void> _addAsset() async {
+    if (!await SessionController.instance.can('assets', action: 'add')) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ليست لديك صلاحية إضافة الأصول')));
+      return;
+    }
     final name = TextEditingController();
     final value = TextEditingController();
     final rate = TextEditingController(text: '10');
+    final depreciationAccount = TextEditingController(text: '5206');
     final accepted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -59,6 +65,14 @@ class _AssetsAndCustodyScreenState extends State<AssetsAndCustodyScreen> {
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(labelText: 'نسبة الإهلاك السنوي %'),
             ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: depreciationAccount,
+              decoration: const InputDecoration(
+                labelText: 'حساب مصروف الإهلاك',
+                helperText: 'الافتراضي 5206 — الإهلاك',
+              ),
+            ),
           ],
         ),
         actions: [
@@ -73,15 +87,21 @@ class _AssetsAndCustodyScreenState extends State<AssetsAndCustodyScreen> {
         value: double.tryParse(value.text) ?? 0,
         purchaseDate: DateTime.now(),
         annualDepreciationRate: double.tryParse(rate.text) ?? 0,
+        depreciationAccount: depreciationAccount.text,
       );
       await _refresh();
     }
     name.dispose();
     value.dispose();
     rate.dispose();
+    depreciationAccount.dispose();
   }
 
   Future<void> _addCustody() async {
+    if (!await SessionController.instance.can('assets', action: 'add')) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ليست لديك صلاحية إضافة العهد')));
+      return;
+    }
     if (_employees.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('أضف موظفاً أولاً من قسم الموظفين والرواتب')),
@@ -227,6 +247,10 @@ class _PayrollScreenState extends State<PayrollScreen> {
   }
 
   Future<void> _addEmployee() async {
+    if (!await SessionController.instance.can('payroll', action: 'add')) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ليست لديك صلاحية إضافة الموظفين')));
+      return;
+    }
     final name = TextEditingController();
     final basic = TextEditingController();
     final allowances = TextEditingController(text: '0');
@@ -284,6 +308,10 @@ class _PayrollScreenState extends State<PayrollScreen> {
   }
 
   Future<void> _runPayroll() async {
+    if (!await SessionController.instance.can('payroll', action: 'approve')) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ليست لديك صلاحية اعتماد مسير الرواتب')));
+      return;
+    }
     final now = DateTime.now();
     final monthKey =
         now.year.toString() + '-' + now.month.toString().padLeft(2, '0');
@@ -372,6 +400,7 @@ class ReportsScreen extends StatefulWidget {
 class _ReportsScreenState extends State<ReportsScreen> {
   FinancialReportSnapshot? _report;
   bool _taxEnabled = false;
+  bool _canViewProfit = false;
   bool _loading = true;
 
   @override
@@ -383,10 +412,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Future<void> _refresh() async {
     final report = await ErpRepository.instance.financialReport();
     final policy = await SindarDatabase.instance.getLicensePolicy();
+    final canViewProfit = await SessionController.instance.can('reports', action: 'profit');
     if (!mounted) return;
     setState(() {
       _report = report;
       _taxEnabled = policy.isTaxEnabled;
+      _canViewProfit = canViewProfit;
       _loading = false;
     });
   }
@@ -413,14 +444,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 8),
-                  _MetricTile('صافي المبيعات', report.revenue),
-                  _MetricTile('تكلفة المبيعات', report.costOfSales),
-                  _MetricTile('المصروفات التشغيلية', report.operatingExpenses),
-                  _MetricTile(
-                    report.netProfit >= 0 ? 'صافي الربح' : 'صافي الخسارة',
-                    report.netProfit,
-                    emphasized: true,
-                  ),
+                  if (_canViewProfit) ...[
+                    _MetricTile('صافي المبيعات', report.revenue),
+                    _MetricTile('تكلفة المبيعات', report.costOfSales),
+                    _MetricTile('المصروفات التشغيلية', report.operatingExpenses),
+                    _MetricTile(
+                      report.netProfit >= 0 ? 'صافي الربح' : 'صافي الخسارة',
+                      report.netProfit,
+                      emphasized: true,
+                    ),
+                  ] else
+                    const Card(
+                      child: ListTile(
+                        leading: Icon(Icons.visibility_off_outlined),
+                        title: Text('بيانات الأرباح مخفية'),
+                        subtitle: Text('تحتاج صلاحية "رؤية الأرباح" لعرض قائمة الدخل.'),
+                      ),
+                    ),
                   const SizedBox(height: 18),
                   const Text(
                     'الذمم',

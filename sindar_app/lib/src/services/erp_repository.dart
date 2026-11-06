@@ -41,6 +41,23 @@ class ErpRepository {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
 
+      const demoCompanySettings = <String, String>{
+        'company_name_ar': 'مؤسسة سندار التجارية',
+        'company_name_en': 'SINDAR Trading Est.',
+        'company_cr': '1010101010',
+        'seller_vat_number': '310123456700003',
+      };
+      for (final entry in demoCompanySettings.entries) {
+        await txn.insert(
+          'app_settings',
+          {
+            'setting_key': entry.key,
+            'setting_value': entry.value,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+
       final userCount = Sqflite.firstIntValue(
             await txn.rawQuery('SELECT COUNT(*) FROM users'),
           ) ??
@@ -410,6 +427,182 @@ class ErpRepository {
     );
   }
 
+  Future<List<ContactChannel>> footerContacts() async {
+    final raw = await SindarDatabase.instance.getSetting('footer_contacts');
+    if (raw == null || raw.trim().isEmpty) {
+      return const [
+        ContactChannel(
+          type: ContactChannelType.mobile,
+          value: '0500000000',
+        ),
+        ContactChannel(
+          type: ContactChannelType.email,
+          value: 'info@sindar.app',
+        ),
+      ];
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return [
+        for (final item in decoded)
+          if (item is Map<String, dynamic> &&
+              item['type'] is String &&
+              item['value'] is String)
+            ContactChannel(
+              type: ContactChannelType.values.byName(item['type']! as String),
+              value: item['value']! as String,
+              label: item['label'] as String?,
+            ),
+      ];
+    } on Object {
+      return const [];
+    }
+  }
+
+  Future<void> saveFooterContacts(List<ContactChannel> contacts) async {
+    await SindarDatabase.instance.saveSetting(
+      'footer_contacts',
+      jsonEncode([
+        for (final contact in contacts)
+          {
+            'type': contact.type.name,
+            'value': contact.value.trim(),
+            'label': contact.label,
+          },
+      ]),
+    );
+  }
+
+  Future<Map<String, String>> companySettings() async {
+    await initialize();
+    final db = await SindarDatabase.instance.database;
+    const keys = [
+      'company_name_ar',
+      'company_name_en',
+      'company_cr',
+      'seller_vat_number',
+    ];
+    final rows = await db.query(
+      'app_settings',
+      where: 'setting_key IN (?,?,?,?)',
+      whereArgs: keys,
+    );
+    return {
+      for (final row in rows)
+        row['setting_key']! as String: row['setting_value']! as String,
+    };
+  }
+
+  Future<void> saveCompanySettings({
+    required String nameAr,
+    required String nameEn,
+    required String commercialRegistration,
+    String? sellerVatNumber,
+  }) async {
+    final policy = await SindarDatabase.instance.getLicensePolicy();
+    final vat = sellerVatNumber?.trim() ?? '';
+    if (nameAr.trim().isEmpty) {
+      throw const FormatException('الاسم التجاري العربي مطلوب');
+    }
+    if (policy.isTaxEnabled &&
+        vat.isNotEmpty &&
+        (vat.length != 15 || int.tryParse(vat) == null)) {
+      throw const FormatException(
+        'الرقم الضريبي للبائع يجب أن يكون 15 رقماً',
+      );
+    }
+    final values = <String, String>{
+      'company_name_ar': nameAr.trim(),
+      'company_name_en': nameEn.trim(),
+      'company_cr': commercialRegistration.trim(),
+      'seller_vat_number': policy.isTaxEnabled ? vat : '',
+    };
+    for (final entry in values.entries) {
+      await SindarDatabase.instance.saveSetting(entry.key, entry.value);
+    }
+  }
+
+  Future<Map<String, Object?>> documentById(int id) async {
+    final db = await SindarDatabase.instance.database;
+    final rows = await db.query(
+      'documents',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) throw const FormatException('Document not found');
+    return rows.first;
+  }
+
+  Future<List<Map<String, Object?>>> documentLines(int documentId) async {
+    final db = await SindarDatabase.instance.database;
+    return db.query(
+      'document_lines',
+      where: 'document_id = ?',
+      whereArgs: [documentId],
+      orderBy: 'id',
+    );
+  }
+
+  Future<DocumentDraft> documentDraft(int documentId) async {
+    final row = await documentById(documentId);
+    final lineRows = await documentLines(documentId);
+    final policy = await SindarDatabase.instance.getLicensePolicy();
+    final company = await companySettings();
+    final contacts = await footerContacts();
+    final rawType = row['type']! as String;
+
+    final type = switch (rawType) {
+      'sales_invoice' => policy.isTaxEnabled
+          ? ((row['party_vat_number'] as String?)?.isNotEmpty == true
+              ? DocumentType.taxInvoice
+              : DocumentType.simplifiedTaxInvoice)
+          : DocumentType.commercialInvoice,
+      'quotation' => DocumentType.quotation,
+      'receipt_voucher' => DocumentType.receiptVoucher,
+      'payment_voucher' => DocumentType.paymentVoucher,
+      'official_letter' => DocumentType.officialLetter,
+      'financial_claim' => DocumentType.financialClaim,
+      _ => DocumentType.commercialInvoice,
+    };
+
+    return DocumentDraft(
+      type: type,
+      number: row['number']! as String,
+      date: DateTime.parse(row['date']! as String),
+      company: CompanyProfile(
+        nameAr: company['company_name_ar'] ?? 'المنشأة',
+        nameEn: company['company_name_en'] ?? '',
+        commercialRegistration: company['company_cr'] ?? '',
+        vatNumber: policy.isTaxEnabled
+            ? _emptyToNull(company['seller_vat_number'])
+            : null,
+      ),
+      lines: [
+        for (final line in lineRows)
+          DocumentLine(
+            description: line['description']! as String,
+            quantity: (line['quantity'] as num).toDouble(),
+            unitPrice: (line['unit_price'] as num).toDouble(),
+            vatRate: policy.isTaxEnabled
+                ? (line['vat_rate'] as num).toDouble()
+                : 0,
+          ),
+      ],
+      contacts: contacts,
+      identity: const DocumentIdentity(),
+      partyName: row['party_name'] as String?,
+      buyerVatNumber: policy.isTaxEnabled
+          ? row['party_vat_number'] as String?
+          : null,
+      buyerCommercialRegistration: policy.isTaxEnabled
+          ? row['party_commercial_registration'] as String?
+          : null,
+      notes: row['notes'] as String?,
+    );
+  }
+
   Future<List<PartyRecord>> listParties(String type) async {
     await initialize();
     final db = await SindarDatabase.instance.database;
@@ -431,8 +624,21 @@ class ErpRepository {
     double creditLimit = 0,
     double openingBalance = 0,
   }) async {
+    if (type != 'customer' && type != 'supplier') {
+      throw const FormatException('Party type must be customer or supplier');
+    }
+    if (name.trim().isEmpty) {
+      throw const FormatException('Party name is required');
+    }
     final policy = await SindarDatabase.instance.getLicensePolicy();
+    final vat = vatNumber?.trim() ?? '';
+    if (policy.isTaxEnabled &&
+        vat.isNotEmpty &&
+        (vat.length != 15 || int.tryParse(vat) == null)) {
+      throw const FormatException('الرقم الضريبي يجب أن يكون 15 رقماً');
+    }
     final db = await SindarDatabase.instance.database;
+    final now = DateTime.now().toUtc();
     return db.transaction((txn) async {
       final id = await txn.insert('parties', {
         'type': type,
@@ -442,17 +648,82 @@ class ErpRepository {
         'phone': _emptyToNull(phone),
         'credit_limit': creditLimit,
         'opening_balance': openingBalance,
-        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'created_at': now.toIso8601String(),
       });
+
       if (openingBalance != 0) {
+        final amount = openingBalance.abs();
+        final customer = type == 'customer';
+        final debit = customer
+            ? (openingBalance > 0 ? amount : 0.0)
+            : (openingBalance < 0 ? amount : 0.0);
+        final credit = customer
+            ? (openingBalance < 0 ? amount : 0.0)
+            : (openingBalance > 0 ? amount : 0.0);
+
         await txn.insert('party_movements', {
           'party_id': id,
-          'date': DateTime.now().toUtc().toIso8601String(),
+          'date': now.toIso8601String(),
           'reference': 'OPENING',
           'operation_type': 'رصيد افتتاحي',
-          'debit': type == 'customer' && openingBalance > 0 ? openingBalance : 0,
-          'credit': type == 'supplier' && openingBalance > 0 ? openingBalance : 0,
+          'debit': debit,
+          'credit': credit,
         });
+
+        final partyAccount = customer ? '1103' : '2101';
+        final equityAccount = '3103';
+        await _postJournalTxn(
+          txn,
+          JournalDraft(
+            date: now,
+            description: 'رصيد افتتاحي - ' + name.trim(),
+            referenceType: 'party_opening',
+            referenceId: id,
+            lines: openingBalance > 0
+                ? (customer
+                    ? [
+                        JournalLineDraft(
+                          accountCode: partyAccount,
+                          debit: amount,
+                        ),
+                        JournalLineDraft(
+                          accountCode: equityAccount,
+                          credit: amount,
+                        ),
+                      ]
+                    : [
+                        JournalLineDraft(
+                          accountCode: equityAccount,
+                          debit: amount,
+                        ),
+                        JournalLineDraft(
+                          accountCode: partyAccount,
+                          credit: amount,
+                        ),
+                      ])
+                : (customer
+                    ? [
+                        JournalLineDraft(
+                          accountCode: equityAccount,
+                          debit: amount,
+                        ),
+                        JournalLineDraft(
+                          accountCode: partyAccount,
+                          credit: amount,
+                        ),
+                      ]
+                    : [
+                        JournalLineDraft(
+                          accountCode: partyAccount,
+                          debit: amount,
+                        ),
+                        JournalLineDraft(
+                          accountCode: equityAccount,
+                          credit: amount,
+                        ),
+                      ]),
+          ),
+        );
       }
       return id;
     });
@@ -496,12 +767,18 @@ class ErpRepository {
     String? buyerCommercialRegistration,
     bool b2b = false,
     int? linkedQuotationId,
+    String settlementAccountCode = '1101',
   }) async {
     if (lines.isEmpty) {
       throw const FormatException('Invoice requires at least one line');
     }
     if (onCredit && customerId == null) {
       throw const FormatException('Credit invoice requires a registered customer');
+    }
+    if (!onCredit &&
+        settlementAccountCode != '1101' &&
+        settlementAccountCode != '1102') {
+      throw const FormatException('Settlement account must be cash or bank');
     }
 
     final policy = await SindarDatabase.instance.getLicensePolicy();
@@ -525,11 +802,38 @@ class ErpRepository {
     return db.transaction((txn) async {
       if (b2b && policy.isTaxEnabled) {
         final vatValue = buyerVatNumber?.trim() ?? '';
-        if (!RegExp(r'^\d{15}$').hasMatch(vatValue)) {
-          throw const FormatException('B2B requires a valid 15-digit buyer VAT number');
+        final crValue = buyerCommercialRegistration?.trim() ?? '';
+        if (vatValue.length != 15 || int.tryParse(vatValue) == null) {
+          throw const FormatException(
+            'B2B requires a valid 15-digit buyer VAT number',
+          );
+        }
+        if (crValue.isEmpty) {
+          throw const FormatException(
+            'B2B requires the buyer commercial registration',
+          );
         }
       }
+
       await _ensureStock(txn, normalized);
+
+      var costOfGoodsSold = 0.0;
+      for (final line in normalized) {
+        final itemId = line.itemId;
+        if (itemId == null) continue;
+        final itemRows = await txn.query(
+          'items',
+          columns: ['purchase_price'],
+          where: 'id = ?',
+          whereArgs: [itemId],
+          limit: 1,
+        );
+        if (itemRows.isNotEmpty) {
+          costOfGoodsSold +=
+              (itemRows.first['purchase_price'] as num).toDouble() *
+              line.quantity;
+        }
+      }
 
       final id = await txn.insert('documents', {
         'type': 'sales_invoice',
@@ -537,9 +841,14 @@ class ErpRepository {
         'date': now.toIso8601String(),
         'party_id': customerId,
         'party_name': _emptyToNull(customerName),
-        'party_vat_number': policy.isTaxEnabled ? _emptyToNull(buyerVatNumber) : null,
-        'party_commercial_registration': b2b ? _emptyToNull(buyerCommercialRegistration) : null,
-        'payment_method': onCredit ? 'credit' : 'cash',
+        'party_vat_number':
+            policy.isTaxEnabled ? _emptyToNull(buyerVatNumber) : null,
+        'party_commercial_registration': b2b
+            ? _emptyToNull(buyerCommercialRegistration)
+            : null,
+        'payment_method': onCredit
+            ? 'credit'
+            : (settlementAccountCode == '1102' ? 'bank' : 'cash'),
         'status': 'approved',
         'subtotal': net,
         'vat_total': vat,
@@ -550,6 +859,7 @@ class ErpRepository {
         'created_at': now.toIso8601String(),
       });
       await _insertLines(txn, id, normalized);
+
       for (final line in normalized) {
         if (line.itemId != null) {
           await txn.rawUpdate(
@@ -558,6 +868,7 @@ class ErpRepository {
           );
         }
       }
+
       await _postJournalTxn(
         txn,
         AutomaticPosting.sales(
@@ -566,8 +877,32 @@ class ErpRepository {
           net: net,
           vat: vat,
           onCredit: onCredit,
+          settlementAccountCode: settlementAccountCode,
         ),
       );
+
+      if (costOfGoodsSold > 0) {
+        await _postJournalTxn(
+          txn,
+          JournalDraft(
+            date: now,
+            description: 'تكلفة البضاعة المباعة - ' + number,
+            referenceType: 'sales_cogs',
+            referenceId: id,
+            lines: [
+              JournalLineDraft(
+                accountCode: '5101',
+                debit: costOfGoodsSold,
+              ),
+              JournalLineDraft(
+                accountCode: '1104',
+                credit: costOfGoodsSold,
+              ),
+            ],
+          ),
+        );
+      }
+
       if (onCredit && customerId != null) {
         await txn.insert('party_movements', {
           'party_id': customerId,
@@ -595,6 +930,8 @@ class ErpRepository {
     required List<InvoiceLineInput> lines,
     int? customerId,
     String? customerName,
+    String? buyerVatNumber,
+    String? buyerCommercialRegistration,
   }) async {
     if (lines.isEmpty) {
       throw const FormatException('Quotation requires at least one line');
@@ -623,6 +960,11 @@ class ErpRepository {
         'date': now.toIso8601String(),
         'party_id': customerId,
         'party_name': _emptyToNull(customerName),
+        'party_vat_number':
+            policy.isTaxEnabled ? _emptyToNull(buyerVatNumber) : null,
+        'party_commercial_registration': policy.isTaxEnabled
+            ? _emptyToNull(buyerCommercialRegistration)
+            : null,
         'payment_method': 'cash',
         'status': 'open',
         'subtotal': net,
@@ -640,6 +982,7 @@ class ErpRepository {
   Future<int> convertQuotationToInvoice(
     int quotationId, {
     required bool onCredit,
+    String settlementAccountCode = '1101',
   }) async {
     final db = await SindarDatabase.instance.database;
     final docs = await db.query(
@@ -665,24 +1008,18 @@ class ErpRepository {
           ),
         )
         .toList(growable: false);
+    final buyerVat = q['party_vat_number'] as String?;
+    final buyerCr = q['party_commercial_registration'] as String?;
     return createSalesInvoice(
       lines: lines,
       onCredit: onCredit,
       customerId: q['party_id'] as int?,
       customerName: q['party_name'] as String?,
-      buyerVatNumber: q['party_vat_number'] as String?,
-      buyerCommercialRegistration: q['party_commercial_registration'] as String?,
+      buyerVatNumber: buyerVat,
+      buyerCommercialRegistration: buyerCr,
+      b2b: buyerVat?.isNotEmpty == true && buyerCr?.isNotEmpty == true,
       linkedQuotationId: quotationId,
-    );
-  }
-
-  Future<List<Map<String, Object?>>> listQuotations() async {
-    final db = await SindarDatabase.instance.database;
-    return db.query(
-      'documents',
-      where: 'type = ?',
-      whereArgs: ['quotation'],
-      orderBy: 'date DESC',
+      settlementAccountCode: settlementAccountCode,
     );
   }
 
@@ -692,11 +1029,30 @@ class ErpRepository {
     int? supplierId,
     String? supplierName,
     String? supplierVatNumber,
+    String settlementAccountCode = '1101',
   }) async {
     if (lines.isEmpty) {
       throw const FormatException('Purchase requires at least one line');
     }
+    if (onCredit && supplierId == null) {
+      throw const FormatException(
+        'Credit purchase requires a registered supplier',
+      );
+    }
+    if (!onCredit &&
+        settlementAccountCode != '1101' &&
+        settlementAccountCode != '1102') {
+      throw const FormatException('Settlement account must be cash or bank');
+    }
+
     final policy = await SindarDatabase.instance.getLicensePolicy();
+    final supplierVat = supplierVatNumber?.trim() ?? '';
+    if (policy.isTaxEnabled &&
+        supplierVat.isNotEmpty &&
+        (supplierVat.length != 15 || int.tryParse(supplierVat) == null)) {
+      throw const FormatException('Supplier VAT must contain 15 digits');
+    }
+
     final number = await _nextNumber('purchase_invoice', 'PUR');
     final db = await SindarDatabase.instance.database;
     final now = DateTime.now().toUtc();
@@ -721,8 +1077,11 @@ class ErpRepository {
         'date': now.toIso8601String(),
         'party_id': supplierId,
         'party_name': _emptyToNull(supplierName),
-        'party_vat_number': policy.isTaxEnabled ? _emptyToNull(supplierVatNumber) : null,
-        'payment_method': onCredit ? 'credit' : 'cash',
+        'party_vat_number':
+            policy.isTaxEnabled ? _emptyToNull(supplierVatNumber) : null,
+        'payment_method': onCredit
+            ? 'credit'
+            : (settlementAccountCode == '1102' ? 'bank' : 'cash'),
         'status': 'approved',
         'subtotal': net,
         'vat_total': vat,
@@ -732,14 +1091,17 @@ class ErpRepository {
         'created_at': now.toIso8601String(),
       });
       await _insertLines(txn, id, normalized);
+
       for (final line in normalized) {
         if (line.itemId != null) {
           await txn.rawUpdate(
-            'UPDATE items SET quantity = quantity + ?, purchase_price = ? WHERE id = ?',
+            'UPDATE items SET quantity = quantity + ?, purchase_price = ? '
+            'WHERE id = ?',
             [line.quantity, line.unitPrice, line.itemId],
           );
         }
       }
+
       await _postJournalTxn(
         txn,
         AutomaticPosting.purchase(
@@ -748,8 +1110,10 @@ class ErpRepository {
           net: net,
           vat: vat,
           onCredit: onCredit,
+          settlementAccountCode: settlementAccountCode,
         ),
       );
+
       if (onCredit && supplierId != null) {
         await txn.insert('party_movements', {
           'party_id': supplierId,
@@ -770,32 +1134,63 @@ class ErpRepository {
     required double amount,
     int? partyId,
     String? partyName,
+    int? linkedDocumentId,
     String? notes,
+    String settlementAccountCode = '1101',
   }) async {
     if (amount <= 0) throw const FormatException('Amount must be positive');
+    if (settlementAccountCode != '1101' &&
+        settlementAccountCode != '1102') {
+      throw const FormatException('Settlement account must be cash or bank');
+    }
     final type = receipt ? 'receipt_voucher' : 'payment_voucher';
     final prefix = receipt ? 'REC' : 'PAY';
     final number = await _nextNumber(type, prefix);
     final policy = await SindarDatabase.instance.getLicensePolicy();
     final db = await SindarDatabase.instance.database;
     final now = DateTime.now().toUtc();
+
     return db.transaction((txn) async {
+      if (linkedDocumentId != null) {
+        final linked = await txn.query(
+          'documents',
+          columns: ['total', 'paid_amount'],
+          where: 'id = ?',
+          whereArgs: [linkedDocumentId],
+          limit: 1,
+        );
+        if (linked.isEmpty) {
+          throw const FormatException('Linked document not found');
+        }
+        final outstanding =
+            (linked.first['total'] as num).toDouble() -
+            (linked.first['paid_amount'] as num).toDouble();
+        if (amount - outstanding > 0.005) {
+          throw const FormatException(
+            'Voucher amount exceeds the linked outstanding balance',
+          );
+        }
+      }
+
       final id = await txn.insert('documents', {
         'type': type,
         'number': number,
         'date': now.toIso8601String(),
         'party_id': partyId,
         'party_name': _emptyToNull(partyName),
-        'payment_method': 'cash',
+        'payment_method':
+            settlementAccountCode == '1102' ? 'bank' : 'cash',
         'status': 'approved',
         'subtotal': amount,
         'vat_total': 0,
         'total': amount,
         'paid_amount': amount,
         'currency_code': policy.currencyCode,
+        'linked_document_id': linkedDocumentId,
         'notes': _emptyToNull(notes),
         'created_at': now.toIso8601String(),
       });
+
       await _postJournalTxn(
         txn,
         receipt
@@ -803,13 +1198,24 @@ class ErpRepository {
                 date: now,
                 referenceId: id,
                 amount: amount,
+                settlementAccountCode: settlementAccountCode,
               )
             : AutomaticPosting.payment(
                 date: now,
                 referenceId: id,
                 amount: amount,
+                settlementAccountCode: settlementAccountCode,
               ),
       );
+
+      if (linkedDocumentId != null) {
+        await txn.rawUpdate(
+          'UPDATE documents SET paid_amount = MIN(total, paid_amount + ?) '
+          'WHERE id = ?',
+          [amount, linkedDocumentId],
+        );
+      }
+
       if (partyId != null) {
         await txn.insert('party_movements', {
           'party_id': partyId,
@@ -896,6 +1302,20 @@ class ErpRepository {
     return result;
   }
 
+  Future<List<Map<String, Object?>>> outstandingDocuments(
+    int partyId, {
+    required bool receivable,
+  }) async {
+    final db = await SindarDatabase.instance.database;
+    final type = receivable ? 'sales_invoice' : 'purchase_invoice';
+    return db.rawQuery(
+      'SELECT *, total-paid_amount AS outstanding FROM documents '
+      'WHERE type=? AND party_id=? AND total>paid_amount '
+      "AND status!='void' ORDER BY date",
+      [type, partyId],
+    );
+  }
+
   Future<List<Map<String, Object?>>> unpaidInvoices(int customerId) async {
     final db = await SindarDatabase.instance.database;
     return db.rawQuery(
@@ -911,6 +1331,7 @@ class ErpRepository {
     required double value,
     required DateTime purchaseDate,
     required double annualDepreciationRate,
+    String depreciationAccount = '5206',
   }) async {
     final db = await SindarDatabase.instance.database;
     return db.transaction((txn) async {
@@ -919,7 +1340,9 @@ class ErpRepository {
         'value': value,
         'purchase_date': purchaseDate.toUtc().toIso8601String(),
         'annual_depreciation_rate': annualDepreciationRate,
-        'depreciation_account': '5206',
+        'depreciation_account': depreciationAccount.trim().isEmpty
+            ? '5206'
+            : depreciationAccount.trim(),
         'status': 'active',
       });
       await _postJournalTxn(
@@ -1218,6 +1641,9 @@ class ErpRepository {
       throw const FormatException('الترخيص موقوف أو منتهي');
     }
     await SindarDatabase.instance.saveLicensePolicy(grant.policy);
+    if (!grant.policy.isTaxEnabled) {
+      await SindarDatabase.instance.saveSetting('seller_vat_number', '');
+    }
     await SindarDatabase.instance.saveSetting(
       'license_grant',
       jsonEncode(grant.toJson()),
@@ -1233,18 +1659,33 @@ class ErpRepository {
     return LicenseGrant.fromJson(decoded);
   }
 
-  Future<bool> hasPermission(AppUserRecord user, String module) async {
+  Future<bool> hasPermission(
+    AppUserRecord user,
+    String module, {
+    String action = 'view',
+  }) async {
     if (user.isSystemAdmin) return true;
+    const columns = <String, String>{
+      'view': 'can_view',
+      'add': 'can_add',
+      'edit': 'can_edit',
+      'delete': 'can_delete',
+      'approve': 'can_approve',
+      'print': 'can_print',
+      'profit': 'can_view_profit',
+    };
+    final column = columns[action];
+    if (column == null) return false;
     final db = await SindarDatabase.instance.database;
     final rows = await db.query(
       'user_permissions',
-      columns: ['can_view'],
+      columns: [column],
       where: 'user_id = ? AND module = ?',
       whereArgs: [user.id, module],
       limit: 1,
     );
     if (rows.isEmpty) return false;
-    return (rows.first['can_view'] as int? ?? 0) == 1;
+    return (rows.first[column] as int? ?? 0) == 1;
   }
 
   Future<String> _nextNumber(String type, String prefix) async {

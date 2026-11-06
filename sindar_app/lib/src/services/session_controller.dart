@@ -30,9 +30,21 @@ class SessionController {
     return true;
   }
 
-  Future<bool> canOpen(String module) async {
+  Future<bool> can(String module, {String action = 'view'}) async {
     final user = currentUser.value;
     if (user == null) return false;
-    return ErpRepository.instance.hasPermission(user, module);
+
+    final grant = await ErpRepository.instance.currentLicenseGrant();
+    if (grant != null && !grant.canOperate && module != 'settings') {
+      return false;
+    }
+
+    return ErpRepository.instance.hasPermission(
+      user,
+      module,
+      action: action,
+    );
   }
+
+  Future<bool> canOpen(String module) => can(module);
 }

@@ -275,7 +275,7 @@ class _TopHeader extends StatelessWidget {
               ),
               Center(
                 child: SizedBox(
-                  width: 154,
+                  width: 132,
                   height: 60,
                   child: SvgPicture.asset(
                     'assets/branding/sindar_header_logo.svg',

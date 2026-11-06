@@ -205,11 +205,24 @@ class DocumentPdfService {
       child: pw.Row(
         children: [
           pw.Expanded(child: pw.Text('العميل/الجهة: ${draft.partyName ?? '-'}')),
-          if (policy.isTaxEnabled && draft.buyerVatNumber != null)
+          if (policy.isTaxEnabled &&
+              (draft.buyerVatNumber != null ||
+                  draft.buyerCommercialRegistration != null))
             pw.Expanded(
-              child: pw.Text(
-                'الرقم الضريبي للعميل: ${draft.buyerVatNumber}',
-                textAlign: pw.TextAlign.left,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  if (draft.buyerVatNumber != null)
+                    pw.Text(
+                      'الرقم الضريبي للعميل: ${draft.buyerVatNumber}',
+                      textAlign: pw.TextAlign.left,
+                    ),
+                  if (draft.buyerCommercialRegistration != null)
+                    pw.Text(
+                      'السجل التجاري للعميل: ${draft.buyerCommercialRegistration}',
+                      textAlign: pw.TextAlign.left,
+                    ),
+                ],
               ),
             ),
         ],

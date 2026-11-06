@@ -1,12 +1,29 @@
 // ignore_for_file: prefer_interpolation_to_compose_strings
 
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 import 'package:sindar_core/sindar_core.dart';
 
 import '../data/local/sindar_database.dart';
+import '../services/document_pdf_service.dart';
 import '../services/erp_repository.dart';
 import '../services/operational_models.dart';
+import '../services/session_controller.dart';
 import 'universal_scanner_screen.dart';
+
+Future<bool> _requirePermission(
+  BuildContext context,
+  String module,
+  String action,
+) async {
+  final allowed = await SessionController.instance.can(module, action: action);
+  if (!allowed && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('ليست لديك صلاحية لتنفيذ هذه العملية')),
+    );
+  }
+  return allowed;
+}
 
 class SalesScreen extends StatefulWidget {
   const SalesScreen({super.key});
@@ -22,7 +39,9 @@ class _SalesScreenState extends State<SalesScreen> {
   LicensePolicy _policy = LicensePolicy.lockedDefault;
   bool _loading = true;
   bool _onCredit = false;
+  String _settlementAccountCode = '1101';
   bool _b2b = false;
+  int? _lastInvoiceId;
   int? _customerId;
   int? _itemId;
   final _qty = TextEditingController(text: '1');
@@ -98,9 +117,10 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   Future<void> _saveInvoice() async {
+    if (!await _requirePermission(context, 'sales', 'approve')) return;
     try {
       final customer = _customer;
-      await ErpRepository.instance.createSalesInvoice(
+      final invoiceId = await ErpRepository.instance.createSalesInvoice(
         lines: _lines,
         onCredit: _onCredit,
         customerId: customer?.id,
@@ -114,9 +134,13 @@ class _SalesScreenState extends State<SalesScreen> {
             ? customer?.commercialRegistration
             : _buyerCr.text.trim(),
         b2b: _b2b,
+        settlementAccountCode: _settlementAccountCode,
       );
       if (!mounted) return;
-      setState(_lines.clear);
+      setState(() {
+        _lastInvoiceId = invoiceId;
+        _lines.clear();
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم اعتماد الفاتورة وترحيل القيد وتحديث المخزون')),
       );
@@ -129,13 +153,45 @@ class _SalesScreenState extends State<SalesScreen> {
     }
   }
 
+  Future<void> _previewLastInvoice() async {
+    final id = _lastInvoiceId;
+    if (id == null) return;
+    if (!await _requirePermission(context, 'sales', 'print')) return;
+    try {
+      final draft = await ErpRepository.instance.documentDraft(id);
+      final policy = await SindarDatabase.instance.getLicensePolicy();
+      final bytes = await const DocumentPdfService().build(
+        draft: draft,
+        policy: policy,
+      );
+      await Printing.layoutPdf(
+        name: '${draft.type.titleAr}-${draft.number}',
+        onLayout: (_) async => bytes,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
+  }
+
   Future<void> _saveQuote() async {
+    if (!await _requirePermission(context, 'sales', 'add')) return;
     try {
       final customer = _customer;
       await ErpRepository.instance.createQuotation(
         lines: _lines,
         customerId: customer?.id,
         customerName: customer?.name,
+        buyerVatNumber: _policy.isTaxEnabled
+            ? (_buyerVat.text.trim().isEmpty
+                ? customer?.vatNumber
+                : _buyerVat.text.trim())
+            : null,
+        buyerCommercialRegistration: _buyerCr.text.trim().isEmpty
+            ? customer?.commercialRegistration
+            : _buyerCr.text.trim(),
       );
       if (!mounted) return;
       setState(_lines.clear);
@@ -152,10 +208,12 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   Future<void> _convertQuote(int id) async {
+    if (!await _requirePermission(context, 'sales', 'approve')) return;
     try {
       await ErpRepository.instance.convertQuotationToInvoice(
         id,
         onCredit: _onCredit,
+        settlementAccountCode: _settlementAccountCode,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -221,6 +279,31 @@ class _SalesScreenState extends State<SalesScreen> {
             value: _onCredit,
             onChanged: (value) => setState(() => _onCredit = value),
           ),
+          if (!_onCredit) ...[
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              key: ValueKey(_settlementAccountCode),
+              initialValue: _settlementAccountCode,
+              decoration: const InputDecoration(
+                labelText: 'حساب التحصيل',
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: '1101',
+                  child: Text('الصندوق / نقدي'),
+                ),
+                DropdownMenuItem(
+                  value: '1102',
+                  child: Text('الحساب البنكي'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _settlementAccountCode = value);
+                }
+              },
+            ),
+          ],
           if (_policy.isTaxEnabled) ...[
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
@@ -347,6 +430,18 @@ class _SalesScreenState extends State<SalesScreen> {
               ),
             ],
           ),
+          if (_lastInvoiceId != null) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _previewLastInvoice,
+              icon: const Icon(Icons.qr_code_2_outlined),
+              label: Text(
+                _policy.isTaxEnabled
+                    ? 'معاينة / طباعة الفاتورة مع QR ZATCA'
+                    : 'معاينة / طباعة الفاتورة التجارية',
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           const Text('عروض الأسعار', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
@@ -385,7 +480,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   List<ItemRecord> _items = const [];
   LicensePolicy _policy = LicensePolicy.lockedDefault;
   bool _loading = true;
-  bool _onCredit = true;
+  bool _onCredit = false;
+  String _settlementAccountCode = '1101';
   int? _supplierId;
   int? _itemId;
   final _manualSupplier = TextEditingController();
@@ -459,6 +555,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   Future<void> _scan() async {
+    if (!await _requirePermission(context, 'purchases', 'add')) return;
     final result = await Navigator.of(context).push<UniversalBarcodeResult>(
       MaterialPageRoute(builder: (_) => const UniversalScannerScreen()),
     );
@@ -489,6 +586,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   Future<void> _save() async {
+    if (!await _requirePermission(context, 'purchases', 'approve')) return;
     try {
       final supplier = _supplier;
       await ErpRepository.instance.createPurchase(
@@ -497,6 +595,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         supplierId: supplier?.id,
         supplierName: supplier?.name ?? _manualSupplier.text,
         supplierVatNumber: supplier?.vatNumber ?? _supplierVat.text,
+        settlementAccountCode: _settlementAccountCode,
       );
       if (!mounted) return;
       setState(_lines.clear);
@@ -543,6 +642,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             onChanged: (value) {
               setState(() {
                 _supplierId = value;
+                if (value == null) _onCredit = false;
                 final supplier = _supplier;
                 if (supplier != null) {
                   _manualSupplier.text = supplier.name;
@@ -571,9 +671,36 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             title: const Text('شراء آجل'),
             subtitle: const Text('عند المورد الثابت يتم تحديث كشف حسابه تلقائياً'),
             value: _onCredit,
-            onChanged: (value) => setState(() => _onCredit = value),
+            onChanged: _supplierId == null
+                ? null
+                : (value) => setState(() => _onCredit = value),
           ),
-          const Divider(height: 28),
+
+          if (!_onCredit) ...[
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              key: ValueKey(_settlementAccountCode),
+              initialValue: _settlementAccountCode,
+              decoration: const InputDecoration(
+                labelText: 'حساب السداد',
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: '1101',
+                  child: Text('الصندوق / نقدي'),
+                ),
+                DropdownMenuItem(
+                  value: '1102',
+                  child: Text('الحساب البنكي'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _settlementAccountCode = value);
+                }
+              },
+            ),
+          ],          const Divider(height: 28),
           DropdownButtonFormField<int?>(
             key: ValueKey(_itemId),
             initialValue: _itemId,

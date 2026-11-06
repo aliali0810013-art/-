@@ -4,11 +4,14 @@ import 'package:sindar_core/sindar_core.dart';
 
 import '../data/local/sindar_database.dart';
 import '../services/document_pdf_service.dart';
+import '../services/erp_repository.dart';
 import '../theme/app_theme.dart';
 import 'universal_scanner_screen.dart';
 
 class DocumentStudioScreen extends StatefulWidget {
-  const DocumentStudioScreen({super.key});
+  const DocumentStudioScreen({super.key, this.initialType});
+
+  final DocumentType? initialType;
 
   @override
   State<DocumentStudioScreen> createState() => _DocumentStudioScreenState();
@@ -24,10 +27,7 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
   final _lines = <_EditableLine>[
     _EditableLine(description: 'خدمة / صنف', quantity: '1', price: '100'),
   ];
-  final _contacts = <ContactChannel>[
-    const ContactChannel(type: ContactChannelType.mobile, value: '0500000000'),
-    const ContactChannel(type: ContactChannelType.email, value: 'info@sindar.app'),
-  ];
+  final _contacts = <ContactChannel>[];
 
   LicensePolicy _policy = LicensePolicy.lockedDefault;
   DocumentType _type = DocumentType.commercialInvoice;
@@ -42,12 +42,20 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
 
   Future<void> _loadPolicy() async {
     final policy = await SindarDatabase.instance.getLicensePolicy();
+    final contacts = await ErpRepository.instance.footerContacts();
     if (!mounted) return;
     setState(() {
       _policy = policy;
-      _type = policy.isTaxEnabled
-          ? DocumentType.taxInvoice
-          : DocumentType.commercialInvoice;
+      _contacts
+        ..clear()
+        ..addAll(contacts);
+      _type = widget.initialType ??
+          (policy.isTaxEnabled
+              ? DocumentType.taxInvoice
+              : DocumentType.commercialInvoice);
+      if (!policy.isTaxEnabled && _type.isTaxInvoice) {
+        _type = DocumentType.commercialInvoice;
+      }
       _loading = false;
     });
   }
@@ -203,6 +211,7 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
     controller.dispose();
     if (result != null && mounted) {
       setState(() => _contacts.add(result));
+      await ErpRepository.instance.saveFooterContacts(_contacts);
     }
   }
 
@@ -310,7 +319,10 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
               title: Text(_contacts[i].value),
               trailing: IconButton(
                 icon: const Icon(Icons.delete_outline),
-                onPressed: () => setState(() => _contacts.removeAt(i)),
+                onPressed: () async {
+                  setState(() => _contacts.removeAt(i));
+                  await ErpRepository.instance.saveFooterContacts(_contacts);
+                },
               ),
             ),
           TextField(

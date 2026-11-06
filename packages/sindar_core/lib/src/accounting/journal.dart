@@ -58,6 +58,7 @@ abstract final class AutomaticPosting {
     required double net,
     required double vat,
     required bool onCredit,
+    String settlementAccountCode = '1101',
   }) {
     final total = net + vat;
     return JournalDraft(
@@ -66,7 +67,10 @@ abstract final class AutomaticPosting {
       referenceType: 'sales_invoice',
       referenceId: referenceId,
       lines: [
-        JournalLineDraft(accountCode: onCredit ? '1103' : '1101', debit: total),
+        JournalLineDraft(
+          accountCode: onCredit ? '1103' : settlementAccountCode,
+          debit: total,
+        ),
         JournalLineDraft(accountCode: '4101', credit: net),
         if (vat > 0) JournalLineDraft(accountCode: '2102', credit: vat),
       ],
@@ -79,6 +83,7 @@ abstract final class AutomaticPosting {
     required double net,
     required double vat,
     required bool onCredit,
+    String settlementAccountCode = '1101',
   }) {
     final total = net + vat;
     return JournalDraft(
@@ -89,7 +94,10 @@ abstract final class AutomaticPosting {
       lines: [
         JournalLineDraft(accountCode: '1104', debit: net),
         if (vat > 0) JournalLineDraft(accountCode: '1105', debit: vat),
-        JournalLineDraft(accountCode: onCredit ? '2101' : '1101', credit: total),
+        JournalLineDraft(
+          accountCode: onCredit ? '2101' : settlementAccountCode,
+          credit: total,
+        ),
       ],
     );
   }
@@ -98,13 +106,14 @@ abstract final class AutomaticPosting {
     required DateTime date,
     required int referenceId,
     required double amount,
+    String settlementAccountCode = '1101',
   }) => JournalDraft(
         date: date,
         description: 'سند قبض من عميل',
         referenceType: 'receipt_voucher',
         referenceId: referenceId,
         lines: [
-          JournalLineDraft(accountCode: '1101', debit: amount),
+          JournalLineDraft(accountCode: settlementAccountCode, debit: amount),
           JournalLineDraft(accountCode: '1103', credit: amount),
         ],
       );
@@ -114,6 +123,7 @@ abstract final class AutomaticPosting {
     required int referenceId,
     required double amount,
     String debitAccountCode = '2101',
+    String settlementAccountCode = '1101',
   }) => JournalDraft(
         date: date,
         description: 'سند صرف',
@@ -121,7 +131,7 @@ abstract final class AutomaticPosting {
         referenceId: referenceId,
         lines: [
           JournalLineDraft(accountCode: debitAccountCode, debit: amount),
-          JournalLineDraft(accountCode: '1101', credit: amount),
+          JournalLineDraft(accountCode: settlementAccountCode, credit: amount),
         ],
       );
 

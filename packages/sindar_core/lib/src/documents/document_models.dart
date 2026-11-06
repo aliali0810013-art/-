@@ -127,6 +127,7 @@ class DocumentDraft {
     required this.identity,
     this.partyName,
     this.buyerVatNumber,
+    this.buyerCommercialRegistration,
     this.notes,
   });
 
@@ -139,6 +140,7 @@ class DocumentDraft {
   final DocumentIdentity identity;
   final String? partyName;
   final String? buyerVatNumber;
+  final String? buyerCommercialRegistration;
   final String? notes;
 
   double get netTotal => lines.fold(0, (sum, line) => sum + line.net);
@@ -159,6 +161,8 @@ class DocumentDraft {
       identity: identity,
       partyName: partyName,
       buyerVatNumber: policy.isTaxEnabled ? buyerVatNumber : null,
+      buyerCommercialRegistration:
+          policy.isTaxEnabled ? buyerCommercialRegistration : null,
       notes: notes,
     );
   }

@@ -2,11 +2,14 @@
 
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
+import 'package:sindar_core/sindar_core.dart';
 import '../data/local/sindar_database.dart';
 import '../services/erp_repository.dart';
 import '../services/operational_models.dart';
 import '../services/party_statement_pdf_service.dart';
+import '../services/session_controller.dart';
 import '../theme/app_theme.dart';
+import 'universal_scanner_screen.dart';
 
 class PartiesScreen extends StatefulWidget {
   const PartiesScreen({super.key, required this.type});
@@ -39,6 +42,11 @@ class _PartiesScreenState extends State<PartiesScreen> {
   }
 
   Future<void> _addParty() async {
+    final module = _customer ? 'customers' : 'suppliers';
+    if (!await SessionController.instance.can(module, action: 'add')) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ليست لديك صلاحية الإضافة')));
+      return;
+    }
     final name = TextEditingController();
     final vat = TextEditingController();
     final cr = TextEditingController();
@@ -113,7 +121,26 @@ class _PartiesScreenState extends State<PartiesScreen> {
   }
 
   Future<void> _showStatement(PartyRecord party) async {
-    final rows = await ErpRepository.instance.partyStatement(party.id);
+    final now = DateTime.now();
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 10),
+      lastDate: DateTime(now.year + 1, 12, 31),
+      initialDateRange: DateTimeRange(
+        start: DateTime(now.year, now.month, 1),
+        end: now,
+      ),
+      helpText: _customer ? 'فترة كشف حساب العميل' : 'فترة كشف حساب المورد',
+      cancelText: 'كل الفترة',
+      confirmText: 'عرض',
+    );
+    if (!mounted) return;
+
+    final rows = await ErpRepository.instance.partyStatement(
+      party.id,
+      from: range?.start,
+      to: range?.end,
+    );
     final policy = await SindarDatabase.instance.getLicensePolicy();
     if (!mounted) return;
 
@@ -121,16 +148,34 @@ class _PartiesScreenState extends State<PartiesScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (context) => FractionallySizedBox(
+      builder: (sheetContext) => FractionallySizedBox(
         heightFactor: .92,
         child: Scaffold(
           appBar: AppBar(
-            title: Text((_customer ? 'كشف حساب: ' : 'كشف حساب مورد: ') + party.name),
+            title: Text(
+              '${_customer ? 'كشف حساب: ' : 'كشف حساب مورد: '}${party.name}',
+            ),
             actions: [
               IconButton(
                 tooltip: 'طباعة / مشاركة كشف الحساب',
                 onPressed: () async {
-                  final bytes = await const PartyStatementPdfService().buildStatement(
+                  final module = _customer ? 'customers' : 'suppliers';
+                  final allowed = await SessionController.instance.can(
+                    module,
+                    action: 'print',
+                  );
+                  if (!allowed) {
+                    if (sheetContext.mounted) {
+                      ScaffoldMessenger.of(sheetContext).showSnackBar(
+                        const SnackBar(
+                          content: Text('ليست لديك صلاحية طباعة كشف الحساب'),
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                  final bytes =
+                      await const PartyStatementPdfService().buildStatement(
                     party: party,
                     rows: rows,
                     policy: policy,
@@ -143,50 +188,93 @@ class _PartiesScreenState extends State<PartiesScreen> {
                 IconButton(
                   tooltip: 'مطالبة مالية',
                   onPressed: () async {
-                    final invoices = await ErpRepository.instance.unpaidInvoices(party.id);
-                    final bytes = await const PartyStatementPdfService().buildClaim(
+                    final allowed = await SessionController.instance.can(
+                      'documents',
+                      action: 'print',
+                    );
+                    if (!allowed) {
+                      if (sheetContext.mounted) {
+                        ScaffoldMessenger.of(sheetContext).showSnackBar(
+                          const SnackBar(
+                            content: Text('ليست لديك صلاحية إصدار المطالبات'),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+                    final invoices =
+                        await ErpRepository.instance.unpaidInvoices(party.id);
+                    final bytes =
+                        await const PartyStatementPdfService().buildClaim(
                       party: party,
                       invoices: invoices,
                       policy: policy,
                     );
                     await Printing.sharePdf(
                       bytes: bytes,
-                      filename: 'claim-' + party.id.toString() + '.pdf',
+                      filename: 'claim-${party.id}.pdf',
                     );
                   },
                   icon: const Icon(Icons.request_quote_outlined),
                 ),
             ],
           ),
-          body: rows.isEmpty
-              ? const Center(child: Text('لا توجد حركات لهذا الحساب'))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
-                    columns: const [
-                      DataColumn(label: Text('التاريخ')),
-                      DataColumn(label: Text('المستند')),
-                      DataColumn(label: Text('العملية')),
-                      DataColumn(label: Text('مدين')),
-                      DataColumn(label: Text('دائن')),
-                      DataColumn(label: Text('الرصيد')),
-                    ],
-                    rows: [
-                      for (final row in rows)
-                        DataRow(
-                          cells: [
-                            DataCell(Text(_date(row.date))),
-                            DataCell(Text(row.reference)),
-                            DataCell(Text(row.operationType)),
-                            DataCell(Text(row.debit.toStringAsFixed(2))),
-                            DataCell(Text(row.credit.toStringAsFixed(2))),
-                            DataCell(Text(row.balance.toStringAsFixed(2))),
-                          ],
-                        ),
-                    ],
+          body: Column(
+            children: [
+              if (range != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Chip(
+                      avatar: const Icon(Icons.date_range_outlined, size: 18),
+                      label: Text(
+                        '${_date(range.start)} — ${_date(range.end)}',
+                      ),
+                    ),
                   ),
                 ),
+              Expanded(
+                child: rows.isEmpty
+                    ? const Center(
+                        child: Text('لا توجد حركات لهذا الحساب في الفترة'),
+                      )
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          columns: const [
+                            DataColumn(label: Text('التاريخ')),
+                            DataColumn(label: Text('المستند')),
+                            DataColumn(label: Text('العملية')),
+                            DataColumn(label: Text('مدين')),
+                            DataColumn(label: Text('دائن')),
+                            DataColumn(label: Text('الرصيد')),
+                          ],
+                          rows: [
+                            for (final row in rows)
+                              DataRow(
+                                cells: [
+                                  DataCell(Text(_date(row.date))),
+                                  DataCell(Text(row.reference)),
+                                  DataCell(Text(row.operationType)),
+                                  DataCell(
+                                    Text(row.debit.toStringAsFixed(2)),
+                                  ),
+                                  DataCell(
+                                    Text(row.credit.toStringAsFixed(2)),
+                                  ),
+                                  DataCell(
+                                    Text(row.balance.toStringAsFixed(2)),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -270,9 +358,29 @@ class _InventoryScreenState extends State<InventoryScreen> {
     });
   }
 
-  Future<void> _add() async {
+  Future<void> _scanAndAdd() async {
+    if (!await SessionController.instance.can('inventory', action: 'add')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ليست لديك صلاحية إضافة الأصناف')),
+        );
+      }
+      return;
+    }
+    final result = await Navigator.of(context).push<UniversalBarcodeResult>(
+      MaterialPageRoute(builder: (_) => const UniversalScannerScreen()),
+    );
+    if (result == null || !mounted) return;
+    await _add(scannedBarcode: result.rawValue);
+  }
+
+  Future<void> _add({String? scannedBarcode}) async {
+    if (!await SessionController.instance.can('inventory', action: 'add')) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ليست لديك صلاحية إضافة الأصناف')));
+      return;
+    }
     final code = TextEditingController();
-    final barcode = TextEditingController();
+    final barcode = TextEditingController(text: scannedBarcode ?? '');
     final name = TextEditingController();
     final purchase = TextEditingController(text: '0');
     final sale = TextEditingController(text: '0');
@@ -335,7 +443,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('المخزون والأصناف')),
+      appBar: AppBar(
+        title: const Text('المخزون والأصناف'),
+        actions: [
+          IconButton(
+            tooltip: 'مسح باركود صنف',
+            onPressed: _scanAndAdd,
+            icon: const Icon(Icons.qr_code_scanner_rounded),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _add,
         icon: const Icon(Icons.add_box_outlined),
