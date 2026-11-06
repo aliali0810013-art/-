@@ -234,7 +234,7 @@ class DocumentPdfService {
       headers: const ['#', 'البيان', 'الكمية', 'السعر', 'الضريبة', 'الإجمالي'],
       data: data,
       headerDecoration: pw.BoxDecoration(color: primary),
-      headerStyle: pw.TextStyle(
+      headerStyle: const pw.TextStyle(
         color: PdfColors.white,
         fontWeight: pw.FontWeight.bold,
         fontSize: 9,

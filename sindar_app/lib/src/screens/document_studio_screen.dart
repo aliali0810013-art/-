@@ -170,7 +170,7 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<ContactChannelType>(
-                value: type,
+                initialValue: type,
                 items: const [
                   DropdownMenuItem(value: ContactChannelType.mobile, child: Text('جوال')),
                   DropdownMenuItem(value: ContactChannelType.phone, child: Text('هاتف')),
@@ -225,7 +225,7 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
           _TaxStatus(policy: _policy),
           const SizedBox(height: 14),
           DropdownButtonFormField<DocumentType>(
-            value: _type,
+            initialValue: _type,
             decoration: const InputDecoration(labelText: 'نوع المستند'),
             items: [
               for (final type in _availableTypes)
