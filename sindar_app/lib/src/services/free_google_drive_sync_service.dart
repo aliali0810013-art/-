@@ -525,12 +525,11 @@ class FreeGoogleDriveSyncService {
 
   Future<void> _validateStagedDatabase(Uint8List databaseBytes) async {
     final temp = await getTemporaryDirectory();
+    final stamp = DateTime.now().microsecondsSinceEpoch;
     final file = io.File(
       p.join(
         temp.path,
-        'sindar-restore-check-' +
-            DateTime.now().microsecondsSinceEpoch.toString() +
-            '.db',
+        'sindar-restore-check-$stamp.db',
       ),
     );
     await file.writeAsBytes(databaseBytes, flush: true);

@@ -465,7 +465,6 @@ class _StatusLine extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             value,
-            textDirection: TextDirection.ltr,
             style: const TextStyle(fontWeight: FontWeight.w800),
           ),
         ],
@@ -608,9 +607,9 @@ class _SecurityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: const Color(0xFFF7F2E6),
-      child: const Padding(
+    return const Card(
+      color: Color(0xFFF7F2E6),
+      child: Padding(
         padding: EdgeInsets.all(14),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
