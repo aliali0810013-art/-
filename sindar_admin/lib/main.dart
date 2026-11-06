@@ -229,7 +229,8 @@ class _TaxLicensePanelState extends State<_TaxLicensePanel> {
                 SizedBox(
                   width: 240,
                   child: DropdownButtonFormField<String>(
-                    value: _countryCode,
+                    key: ValueKey(_countryCode),
+                    initialValue: _countryCode,
                     decoration: const InputDecoration(labelText: 'الدولة'),
                     items: const [
                       DropdownMenuItem(value: 'SA', child: Text('السعودية')),
@@ -249,12 +250,75 @@ class _TaxLicensePanelState extends State<_TaxLicensePanel> {
                 SizedBox(
                   width: 240,
                   child: DropdownButtonFormField<String>(
-                    value: _currencyCode,
+                    key: ValueKey(_currencyCode),
+                    initialValue: _currencyCode,
                     decoration: const InputDecoration(labelText: 'العملة'),
                     items: const [
                       DropdownMenuItem(value: 'SAR', child: Text('ريال سعودي ر.س')),
                       DropdownMenuItem(value: 'YER', child: Text('ريال يمني ر.ي')),
-                      DropdownMenuItem(value: 'USD', child: Text('دولار $')),
+                      DropdownMenuItem(value: 'USD', child: Text('دولار \\
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setState(() => _currencyCode = value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'الحد الأقصى للمستخدمين',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _maxUsers > 1 ? () => setState(() => _maxUsers--) : null,
+                  icon: const Icon(Icons.remove_circle_outline),
+                ),
+                Text('$_maxUsers', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+                IconButton(
+                  onPressed: () => setState(() => _maxUsers++),
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF4F7FA),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'السياسة الحالية: tax=${_policy.isTaxEnabled} • ${_policy.countryCode} • ${_policy.currencyCode} • maxUsers=${_policy.maxUsers}',
+                style: const TextStyle(color: navy, fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () {
+                final policy = _policy;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'تم تجهيز سياسة الترخيص: ${policy.isTaxEnabled ? "ضريبي" : "غير ضريبي"} — ${policy.currencyCode}',
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('حفظ سياسة الترخيص للعميل المحدد'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+)),
                     ],
                     onChanged: (value) {
                       if (value != null) setState(() => _currencyCode = value);
