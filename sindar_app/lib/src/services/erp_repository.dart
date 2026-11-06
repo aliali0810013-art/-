@@ -1233,6 +1233,20 @@ class ErpRepository {
     return LicenseGrant.fromJson(decoded);
   }
 
+  Future<bool> hasPermission(AppUserRecord user, String module) async {
+    if (user.isSystemAdmin) return true;
+    final db = await SindarDatabase.instance.database;
+    final rows = await db.query(
+      'user_permissions',
+      columns: ['can_view'],
+      where: 'user_id = ? AND module = ?',
+      whereArgs: [user.id, module],
+      limit: 1,
+    );
+    if (rows.isEmpty) return false;
+    return (rows.first['can_view'] as int? ?? 0) == 1;
+  }
+
   Future<String> _nextNumber(String type, String prefix) async {
     final next = await SindarDatabase.instance.nextDocumentNumber(type);
     return prefix + '-' + next.toString().padLeft(6, '0');

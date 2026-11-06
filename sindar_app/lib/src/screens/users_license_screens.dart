@@ -1,6 +1,7 @@
 // ignore_for_file: prefer_interpolation_to_compose_strings
 
 import 'package:flutter/material.dart';
+import 'package:sindar_core/sindar_core.dart';
 
 import '../data/local/sindar_database.dart';
 import '../services/erp_repository.dart';

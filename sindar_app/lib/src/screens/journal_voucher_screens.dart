@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings
+
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 import 'package:sindar_core/sindar_core.dart';

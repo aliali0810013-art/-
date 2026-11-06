@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings
+
 import 'package:flutter/material.dart';
 import 'package:sindar_core/sindar_core.dart';
 
@@ -479,7 +481,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             description: 'فاتورة مورد ممسوحة بالباركود',
             quantity: 1,
             unitPrice: net,
-            vatRate: _policy.isTaxEnabled ? rate : 0,
+            vatRate: _policy.isTaxEnabled ? rate : 0.0,
           ),
         );
       }
