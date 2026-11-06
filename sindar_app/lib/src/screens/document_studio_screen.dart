@@ -172,7 +172,7 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
       final id = await ErpRepository.instance.saveStandaloneDocument(_draft());
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تم حفظ المستند في SQLite برقم داخلي ' + id.toString())),
+        SnackBar(content: Text('تم حفظ المستند في SQLite برقم داخلي $id')),
       );
     } catch (error) {
       if (!mounted) return;
