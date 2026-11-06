@@ -256,7 +256,7 @@ class _TaxLicensePanelState extends State<_TaxLicensePanel> {
                     items: const [
                       DropdownMenuItem(value: 'SAR', child: Text('ريال سعودي ر.س')),
                       DropdownMenuItem(value: 'YER', child: Text('ريال يمني ر.ي')),
-                      DropdownMenuItem(value: 'USD', child: Text('دولار \\
+                      DropdownMenuItem(value: 'USD', child: Text('دولار أمريكي')),
                     ],
                     onChanged: (value) {
                       if (value != null) setState(() => _currencyCode = value);
