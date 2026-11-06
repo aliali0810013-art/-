@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'src/theme/app_theme.dart';
+import 'src/services/free_google_drive_sync_service.dart';
 import 'src/screens/home_dashboard_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await CloudSyncScheduler.initialize();
+  await CloudSyncScheduler.restoreRegistration();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: AppColors.navy,

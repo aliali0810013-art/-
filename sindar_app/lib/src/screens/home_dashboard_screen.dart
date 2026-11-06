@@ -16,6 +16,7 @@ import 'document_studio_screen.dart';
 import 'journal_voucher_screens.dart';
 import 'party_inventory_screens.dart';
 import 'sales_purchase_screens.dart';
+import 'settings_hub_screen.dart';
 import 'users_license_screens.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
@@ -175,7 +176,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         await _openPage('reports', const ReportsScreen());
         break;
       case 4:
-        await _openPage('settings', const LicenseActivationScreen());
+        await _openPage('settings', const SettingsHubScreen());
         break;
     }
     if (mounted) setState(() => _navIndex = 0);
