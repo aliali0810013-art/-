@@ -132,7 +132,13 @@ class _TopHeader extends StatelessWidget {
             )
           : Row(
               children: [
-                const Expanded(child: _HeaderTools()),
+                const Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: _HeaderTools(),
+                  ),
+                ),
                 SizedBox(
                   width: 228,
                   height: 86,
