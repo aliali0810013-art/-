@@ -5,6 +5,7 @@ import 'package:sindar_core/sindar_core.dart';
 import '../data/local/sindar_database.dart';
 import '../services/document_pdf_service.dart';
 import '../services/erp_repository.dart';
+import '../services/session_controller.dart';
 import '../theme/app_theme.dart';
 import 'universal_scanner_screen.dart';
 
@@ -120,6 +121,10 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
   }
 
   Future<void> _preview() async {
+    if (!await SessionController.instance.can('documents', action: 'print')) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ليست لديك صلاحية الطباعة')));
+      return;
+    }
     try {
       final draft = _draft();
       await Printing.layoutPdf(
@@ -135,6 +140,10 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
   }
 
   Future<void> _share() async {
+    if (!await SessionController.instance.can('documents', action: 'print')) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ليست لديك صلاحية المشاركة / الطباعة')));
+      return;
+    }
     try {
       final draft = _draft();
       final bytes = await _pdf.build(draft: draft, policy: _policy);
@@ -146,6 +155,29 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر مشاركة المستند: $error')),
+      );
+    }
+  }
+
+  Future<void> _saveStandalone() async {
+    if (!await SessionController.instance.can('documents', action: 'add')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ليست لديك صلاحية حفظ المستندات')),
+        );
+      }
+      return;
+    }
+    try {
+      final id = await ErpRepository.instance.saveStandaloneDocument(_draft());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تم حفظ المستند في SQLite برقم داخلي ' + id.toString())),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
       );
     }
   }
@@ -332,6 +364,15 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
             decoration: const InputDecoration(labelText: 'ملاحظات'),
           ),
           const SizedBox(height: 18),
+          if (_type == DocumentType.officialLetter ||
+              _type == DocumentType.financialClaim) ...[
+            FilledButton.tonalIcon(
+              onPressed: _saveStandalone,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('حفظ المستند في النظام'),
+            ),
+            const SizedBox(height: 10),
+          ],
           Row(
             children: [
               Expanded(child: OutlinedButton.icon(onPressed: _share, icon: const Icon(Icons.share_outlined), label: const Text('مشاركة PDF'))),

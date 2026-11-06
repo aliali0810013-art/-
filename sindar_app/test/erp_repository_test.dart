@@ -145,4 +145,69 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('editing a sale reverses old stock and journals before reposting', () async {
+    await ErpRepository.instance.initialize();
+    final item = (await ErpRepository.instance.listItems())
+        .firstWhere((e) => e.code == 'ITM-001');
+    final beforeQty = item.quantity;
+
+    final invoiceId = await ErpRepository.instance.createSalesInvoice(
+      lines: [
+        InvoiceLineInput(
+          itemId: item.id,
+          description: item.name,
+          quantity: 2,
+          unitPrice: 75,
+          vatRate: .15,
+        ),
+      ],
+      onCredit: false,
+      settlementAccountCode: '1102',
+    );
+
+    await ErpRepository.instance.updateSalesInvoice(
+      invoiceId: invoiceId,
+      lines: [
+        InvoiceLineInput(
+          itemId: item.id,
+          description: item.name,
+          quantity: 1,
+          unitPrice: 75,
+          vatRate: .15,
+        ),
+      ],
+      onCredit: false,
+      settlementAccountCode: '1101',
+    );
+
+    final db = await SindarDatabase.instance.database;
+    final stock = await db.query(
+      'items',
+      columns: ['quantity'],
+      where: 'id = ?',
+      whereArgs: [item.id],
+      limit: 1,
+    );
+    expect(
+      (stock.first['quantity'] as num).toDouble(),
+      closeTo(beforeQty - 1, .001),
+    );
+
+    final bank = await db.rawQuery(
+      'SELECT COALESCE(SUM(jl.debit-jl.credit),0) value '
+      'FROM journal_lines jl JOIN journal_entries je ON je.id=jl.entry_id '
+      "WHERE je.reference_id=? AND jl.account_code='1102'",
+      [invoiceId],
+    );
+    final cash = await db.rawQuery(
+      'SELECT COALESCE(SUM(jl.debit-jl.credit),0) value '
+      'FROM journal_lines jl JOIN journal_entries je ON je.id=jl.entry_id '
+      "WHERE je.reference_id=? AND jl.account_code='1101'",
+      [invoiceId],
+    );
+    expect((bank.first['value'] as num).toDouble(), closeTo(0, .001));
+    expect((cash.first['value'] as num).toDouble(), closeTo(86.25, .001));
+  });
+
 }

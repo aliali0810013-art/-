@@ -926,6 +926,294 @@ class ErpRepository {
     });
   }
 
+  Future<int> saveStandaloneDocument(DocumentDraft draft) async {
+    final type = switch (draft.type) {
+      DocumentType.officialLetter => 'official_letter',
+      DocumentType.financialClaim => 'financial_claim',
+      DocumentType.customerStatement => 'customer_statement',
+      DocumentType.supplierStatement => 'supplier_statement',
+      _ => throw const FormatException(
+          'This document type must be saved from its operational screen',
+        ),
+    };
+    final prefix = switch (draft.type) {
+      DocumentType.officialLetter => 'LTR',
+      DocumentType.financialClaim => 'CLM',
+      DocumentType.customerStatement => 'CST',
+      DocumentType.supplierStatement => 'SST',
+      _ => 'DOC',
+    };
+    final number = await _nextNumber(type, prefix);
+    final policy = await SindarDatabase.instance.getLicensePolicy();
+    final db = await SindarDatabase.instance.database;
+    final safe = draft.sanitizedFor(policy);
+
+    return db.transaction((txn) async {
+      final id = await txn.insert('documents', {
+        'type': type,
+        'number': number,
+        'date': safe.date.toUtc().toIso8601String(),
+        'party_name': _emptyToNull(safe.partyName),
+        'party_vat_number':
+            policy.isTaxEnabled ? _emptyToNull(safe.buyerVatNumber) : null,
+        'party_commercial_registration': policy.isTaxEnabled
+            ? _emptyToNull(safe.buyerCommercialRegistration)
+            : null,
+        'payment_method': 'none',
+        'status': 'approved',
+        'subtotal': safe.netTotal,
+        'vat_total': safe.vatTotal,
+        'total': safe.grandTotal,
+        'paid_amount': 0,
+        'currency_code': policy.currencyCode,
+        'notes': _emptyToNull(safe.notes),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      await _insertLines(
+        txn,
+        id,
+        [
+          for (final line in safe.lines)
+            InvoiceLineInput(
+              description: line.description,
+              quantity: line.quantity,
+              unitPrice: line.unitPrice,
+              vatRate: line.vatRate,
+            ),
+        ],
+      );
+      return id;
+    });
+  }
+
+  Future<List<Map<String, Object?>>> listSalesInvoices({
+    int limit = 30,
+  }) async {
+    final db = await SindarDatabase.instance.database;
+    return db.query(
+      'documents',
+      where: 'type = ? AND status != ?',
+      whereArgs: ['sales_invoice', 'void'],
+      orderBy: 'date DESC, id DESC',
+      limit: limit,
+    );
+  }
+
+  Future<int> updateSalesInvoice({
+    required int invoiceId,
+    required List<InvoiceLineInput> lines,
+    required bool onCredit,
+    int? customerId,
+    String? customerName,
+    String? buyerVatNumber,
+    String? buyerCommercialRegistration,
+    bool b2b = false,
+    String settlementAccountCode = '1101',
+  }) async {
+    if (lines.isEmpty) {
+      throw const FormatException('Invoice requires at least one line');
+    }
+    if (onCredit && customerId == null) {
+      throw const FormatException(
+        'Credit invoice requires a registered customer',
+      );
+    }
+    if (!onCredit &&
+        settlementAccountCode != '1101' &&
+        settlementAccountCode != '1102') {
+      throw const FormatException('Settlement account must be cash or bank');
+    }
+
+    final policy = await SindarDatabase.instance.getLicensePolicy();
+    final db = await SindarDatabase.instance.database;
+    final normalized = [
+      for (final line in lines)
+        InvoiceLineInput(
+          itemId: line.itemId,
+          description: line.description,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          vatRate: policy.isTaxEnabled ? 0.15 : 0,
+        ),
+    ];
+    final net = normalized.fold<double>(0, (sum, line) => sum + line.net);
+    final vat = normalized.fold<double>(0, (sum, line) => sum + line.vat);
+    final total = net + vat;
+
+    return db.transaction((txn) async {
+      final docs = await txn.query(
+        'documents',
+        where: 'id = ? AND type = ? AND status != ?',
+        whereArgs: [invoiceId, 'sales_invoice', 'void'],
+        limit: 1,
+      );
+      if (docs.isEmpty) {
+        throw const FormatException('Sales invoice not found');
+      }
+      final old = docs.first;
+      final oldPayment = old['payment_method']! as String;
+      final oldPaid = (old['paid_amount'] as num).toDouble();
+      if (oldPayment == 'credit' && oldPaid > 0.005) {
+        throw const FormatException(
+          'لا يمكن تعديل فاتورة آجلة بعد تسجيل تحصيل عليها',
+        );
+      }
+
+      if (b2b && policy.isTaxEnabled) {
+        final vatValue = buyerVatNumber?.trim() ?? '';
+        final crValue = buyerCommercialRegistration?.trim() ?? '';
+        if (vatValue.length != 15 || int.tryParse(vatValue) == null) {
+          throw const FormatException(
+            'B2B requires a valid 15-digit buyer VAT number',
+          );
+        }
+        if (crValue.isEmpty) {
+          throw const FormatException(
+            'B2B requires the buyer commercial registration',
+          );
+        }
+      }
+
+      final oldLines = await txn.query(
+        'document_lines',
+        where: 'document_id = ?',
+        whereArgs: [invoiceId],
+      );
+      for (final row in oldLines) {
+        final itemId = row['item_id'] as int?;
+        if (itemId != null) {
+          await txn.rawUpdate(
+            'UPDATE items SET quantity = quantity + ? WHERE id = ?',
+            [(row['quantity'] as num).toDouble(), itemId],
+          );
+        }
+      }
+
+      await txn.rawDelete(
+        'DELETE FROM journal_lines WHERE entry_id IN ('
+        'SELECT id FROM journal_entries WHERE reference_id=? '
+        "AND reference_type IN ('sales_invoice','sales_cogs'))",
+        [invoiceId],
+      );
+      await txn.rawDelete(
+        'DELETE FROM journal_entries WHERE reference_id=? '
+        "AND reference_type IN ('sales_invoice','sales_cogs')",
+        [invoiceId],
+      );
+      await txn.delete(
+        'party_movements',
+        where: 'document_id = ?',
+        whereArgs: [invoiceId],
+      );
+      await txn.delete(
+        'document_lines',
+        where: 'document_id = ?',
+        whereArgs: [invoiceId],
+      );
+
+      await _ensureStock(txn, normalized);
+
+      var costOfGoodsSold = 0.0;
+      for (final line in normalized) {
+        final itemId = line.itemId;
+        if (itemId == null) continue;
+        final itemRows = await txn.query(
+          'items',
+          columns: ['purchase_price'],
+          where: 'id = ?',
+          whereArgs: [itemId],
+          limit: 1,
+        );
+        if (itemRows.isNotEmpty) {
+          costOfGoodsSold +=
+              (itemRows.first['purchase_price'] as num).toDouble() *
+              line.quantity;
+        }
+      }
+
+      final date = DateTime.parse(old['date']! as String);
+      final number = old['number']! as String;
+      await txn.update(
+        'documents',
+        {
+          'party_id': customerId,
+          'party_name': _emptyToNull(customerName),
+          'party_vat_number':
+              policy.isTaxEnabled ? _emptyToNull(buyerVatNumber) : null,
+          'party_commercial_registration': b2b
+              ? _emptyToNull(buyerCommercialRegistration)
+              : null,
+          'payment_method': onCredit
+              ? 'credit'
+              : (settlementAccountCode == '1102' ? 'bank' : 'cash'),
+          'subtotal': net,
+          'vat_total': vat,
+          'total': total,
+          'paid_amount': onCredit ? 0 : total,
+          'currency_code': policy.currencyCode,
+        },
+        where: 'id = ?',
+        whereArgs: [invoiceId],
+      );
+
+      await _insertLines(txn, invoiceId, normalized);
+      for (final line in normalized) {
+        if (line.itemId != null) {
+          await txn.rawUpdate(
+            'UPDATE items SET quantity = quantity - ? WHERE id = ?',
+            [line.quantity, line.itemId],
+          );
+        }
+      }
+
+      await _postJournalTxn(
+        txn,
+        AutomaticPosting.sales(
+          date: date,
+          referenceId: invoiceId,
+          net: net,
+          vat: vat,
+          onCredit: onCredit,
+          settlementAccountCode: settlementAccountCode,
+        ),
+      );
+      if (costOfGoodsSold > 0) {
+        await _postJournalTxn(
+          txn,
+          JournalDraft(
+            date: date,
+            description: 'تكلفة البضاعة المباعة - ' + number,
+            referenceType: 'sales_cogs',
+            referenceId: invoiceId,
+            lines: [
+              JournalLineDraft(
+                accountCode: '5101',
+                debit: costOfGoodsSold,
+              ),
+              JournalLineDraft(
+                accountCode: '1104',
+                credit: costOfGoodsSold,
+              ),
+            ],
+          ),
+        );
+      }
+
+      if (onCredit && customerId != null) {
+        await txn.insert('party_movements', {
+          'party_id': customerId,
+          'date': date.toUtc().toIso8601String(),
+          'reference': number,
+          'operation_type': 'فاتورة مبيعات',
+          'debit': total,
+          'credit': 0,
+          'document_id': invoiceId,
+        });
+      }
+      return invoiceId;
+    });
+  }
+
   Future<int> createQuotation({
     required List<InvoiceLineInput> lines,
     int? customerId,

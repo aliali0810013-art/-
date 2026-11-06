@@ -36,12 +36,14 @@ class _SalesScreenState extends State<SalesScreen> {
   List<PartyRecord> _customers = const [];
   List<ItemRecord> _items = const [];
   List<Map<String, Object?>> _quotes = const [];
+  List<Map<String, Object?>> _salesInvoices = const [];
   LicensePolicy _policy = LicensePolicy.lockedDefault;
   bool _loading = true;
   bool _onCredit = false;
   String _settlementAccountCode = '1101';
   bool _b2b = false;
   int? _lastInvoiceId;
+  int? _editingInvoiceId;
   int? _customerId;
   int? _itemId;
   final _qty = TextEditingController(text: '1');
@@ -69,12 +71,14 @@ class _SalesScreenState extends State<SalesScreen> {
     final customers = await ErpRepository.instance.listParties('customer');
     final items = await ErpRepository.instance.listItems();
     final quotes = await ErpRepository.instance.listQuotations();
+    final salesInvoices = await ErpRepository.instance.listSalesInvoices();
     final policy = await SindarDatabase.instance.getLicensePolicy();
     if (!mounted) return;
     setState(() {
       _customers = customers;
       _items = items;
       _quotes = quotes;
+      _salesInvoices = salesInvoices;
       _policy = policy;
       _loading = false;
     });
@@ -117,32 +121,56 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   Future<void> _saveInvoice() async {
-    if (!await _requirePermission(context, 'sales', 'approve')) return;
+    final editingId = _editingInvoiceId;
+    final action = editingId == null ? 'approve' : 'edit';
+    if (!await _requirePermission(context, 'sales', action)) return;
     try {
       final customer = _customer;
-      final invoiceId = await ErpRepository.instance.createSalesInvoice(
-        lines: _lines,
-        onCredit: _onCredit,
-        customerId: customer?.id,
-        customerName: customer?.name,
-        buyerVatNumber: _policy.isTaxEnabled
-            ? (_buyerVat.text.trim().isEmpty
-                ? customer?.vatNumber
-                : _buyerVat.text.trim())
-            : null,
-        buyerCommercialRegistration: _buyerCr.text.trim().isEmpty
-            ? customer?.commercialRegistration
-            : _buyerCr.text.trim(),
-        b2b: _b2b,
-        settlementAccountCode: _settlementAccountCode,
-      );
+      final buyerVat = _policy.isTaxEnabled
+          ? (_buyerVat.text.trim().isEmpty
+              ? customer?.vatNumber
+              : _buyerVat.text.trim())
+          : null;
+      final buyerCr = _buyerCr.text.trim().isEmpty
+          ? customer?.commercialRegistration
+          : _buyerCr.text.trim();
+
+      final invoiceId = editingId == null
+          ? await ErpRepository.instance.createSalesInvoice(
+              lines: _lines,
+              onCredit: _onCredit,
+              customerId: customer?.id,
+              customerName: customer?.name,
+              buyerVatNumber: buyerVat,
+              buyerCommercialRegistration: buyerCr,
+              b2b: _b2b,
+              settlementAccountCode: _settlementAccountCode,
+            )
+          : await ErpRepository.instance.updateSalesInvoice(
+              invoiceId: editingId,
+              lines: _lines,
+              onCredit: _onCredit,
+              customerId: customer?.id,
+              customerName: customer?.name,
+              buyerVatNumber: buyerVat,
+              buyerCommercialRegistration: buyerCr,
+              b2b: _b2b,
+              settlementAccountCode: _settlementAccountCode,
+            );
       if (!mounted) return;
       setState(() {
         _lastInvoiceId = invoiceId;
+        _editingInvoiceId = null;
         _lines.clear();
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم اعتماد الفاتورة وترحيل القيد وتحديث المخزون')),
+        SnackBar(
+          content: Text(
+            editingId == null
+                ? 'تم اعتماد الفاتورة وترحيل القيد وتحديث المخزون'
+                : 'تم تعديل الفاتورة وإعادة ترحيل المخزون والقيود تلقائياً',
+          ),
+        ),
       );
       await _refresh();
     } catch (error) {
@@ -151,6 +179,55 @@ class _SalesScreenState extends State<SalesScreen> {
         SnackBar(content: Text(error.toString())),
       );
     }
+  }
+
+  Future<void> _editInvoice(Map<String, Object?> invoice) async {
+    if (!await _requirePermission(context, 'sales', 'edit')) return;
+    final id = invoice['id']! as int;
+    final rows = await ErpRepository.instance.documentLines(id);
+    if (!mounted) return;
+
+    final payment = invoice['payment_method']! as String;
+    setState(() {
+      _editingInvoiceId = id;
+      _lastInvoiceId = id;
+      _customerId = invoice['party_id'] as int?;
+      _onCredit = payment == 'credit';
+      _settlementAccountCode = payment == 'bank' ? '1102' : '1101';
+      _buyerVat.text = invoice['party_vat_number'] as String? ?? '';
+      _buyerCr.text =
+          invoice['party_commercial_registration'] as String? ?? '';
+      _b2b = _policy.isTaxEnabled &&
+          _buyerVat.text.isNotEmpty &&
+          _buyerCr.text.isNotEmpty;
+      _lines
+        ..clear()
+        ..addAll([
+          for (final row in rows)
+            InvoiceLineInput(
+              itemId: row['item_id'] as int?,
+              description: row['description']! as String,
+              quantity: (row['quantity'] as num).toDouble(),
+              unitPrice: (row['unit_price'] as num).toDouble(),
+              vatRate: _policy.isTaxEnabled
+                  ? (row['vat_rate'] as num).toDouble()
+                  : 0,
+            ),
+        ]);
+    });
+  }
+
+  void _cancelEdit() {
+    setState(() {
+      _editingInvoiceId = null;
+      _lines.clear();
+      _customerId = null;
+      _buyerVat.clear();
+      _buyerCr.clear();
+      _b2b = false;
+      _onCredit = false;
+      _settlementAccountCode = '1101';
+    });
   }
 
   Future<void> _previewLastInvoice() async {
@@ -251,6 +328,27 @@ class _SalesScreenState extends State<SalesScreen> {
                 subtitle: Text('سيتم إصدار فواتير مبيعات تجارية بدون حقول ضريبية.'),
               ),
             ),
+          if (_editingInvoiceId != null) ...[
+            Card(
+              color: const Color(0xFFFFF6DC),
+              child: ListTile(
+                leading: const Icon(Icons.edit_note_outlined),
+                title: Text(
+                  'وضع تعديل الفاتورة رقم ' +
+                      _editingInvoiceId.toString(),
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                subtitle: const Text(
+                  'عند الحفظ ستتم استعادة المخزون والقيود القديمة ثم إعادة الترحيل.',
+                ),
+                trailing: TextButton(
+                  onPressed: _cancelEdit,
+                  child: const Text('إلغاء التعديل'),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           DropdownButtonFormField<int?>(
             key: ValueKey(_customerId),
             initialValue: _customerId,
@@ -425,7 +523,11 @@ class _SalesScreenState extends State<SalesScreen> {
                 child: FilledButton.icon(
                   onPressed: _lines.isEmpty ? null : _saveInvoice,
                   icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('اعتماد الفاتورة'),
+                  label: Text(
+                    _editingInvoiceId == null
+                        ? 'اعتماد الفاتورة'
+                        : 'حفظ تعديل الفاتورة',
+                  ),
                 ),
               ),
             ],
@@ -443,6 +545,31 @@ class _SalesScreenState extends State<SalesScreen> {
             ),
           ],
           const SizedBox(height: 24),
+          const Text(
+            'فواتير المبيعات',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          for (final invoice in _salesInvoices.take(8))
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: Text(invoice['number']! as String),
+                subtitle: Text(
+                  (invoice['party_name'] as String? ?? 'عميل نقدي') +
+                      ' • ' +
+                      (invoice['total'] as num).toDouble().toStringAsFixed(2) +
+                      ' ' +
+                      _policy.currencySymbol,
+                ),
+                trailing: IconButton(
+                  tooltip: 'تعديل الفاتورة',
+                  onPressed: () => _editInvoice(invoice),
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+              ),
+            ),
+          const SizedBox(height: 18),
           const Text('عروض الأسعار', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
           for (final quote in _quotes)
