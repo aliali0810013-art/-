@@ -473,9 +473,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         _supplierVat.text = prefill.supplierVatNumber!;
       }
       if (prefill.total != null) {
-        final vat = prefill.vatTotal ?? 0;
+        final vat = prefill.vatTotal ?? 0.0;
         final net = prefill.total! - vat;
-        final rate = net > 0 ? vat / net : 0;
+        final rate = net > 0 ? vat / net : 0.0;
         _lines.add(
           InvoiceLineInput(
             description: 'فاتورة مورد ممسوحة بالباركود',
