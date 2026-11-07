@@ -109,10 +109,11 @@ class ErpRepository {
               ')',
           demoNumbers,
         );
-        await txn.delete(
-          'items',
-          where: 'code = ? AND name = ?',
-          whereArgs: ['ITM-001', 'صنف تجريبي رئيسي'],
+        await txn.rawDelete(
+          "DELETE FROM items WHERE code = ? AND name = ? "
+          'AND id NOT IN (SELECT item_id FROM document_lines '
+          'WHERE item_id IS NOT NULL)',
+          ['ITM-001', 'صنف تجريبي رئيسي'],
         );
         await txn.rawDelete(
           "DELETE FROM parties WHERE name IN (?, ?) "

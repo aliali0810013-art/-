@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:sindar_core/sindar_core.dart';
-
 import '../services/erp_repository.dart';
 import '../services/free_google_drive_sync_service.dart';
 import '../services/session_controller.dart';
