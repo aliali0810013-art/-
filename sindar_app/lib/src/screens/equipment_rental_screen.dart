@@ -271,6 +271,7 @@ class _EquipmentRentalScreenState extends State<EquipmentRentalScreen> {
 
   Future<void> _add() async {
     if (!await _authorize('add')) return;
+    if (!mounted) return;
     final code = TextEditingController();
     final name = TextEditingController();
     final serial = TextEditingController();
@@ -301,6 +302,7 @@ class _EquipmentRentalScreenState extends State<EquipmentRentalScreen> {
 
   Future<void> _operate(Map<String, Object?> equipment, {required bool sale}) async {
     if (!await _authorize('approve')) return;
+    if (!mounted) return;
     if (_customers.isEmpty) {
       _error('أضف عميلاً أولاً من قسم العملاء');
       return;
@@ -349,6 +351,7 @@ class _EquipmentRentalScreenState extends State<EquipmentRentalScreen> {
 
   Future<void> _returnEquipment(Map<String, Object?> rental) async {
     if (!await _authorize('edit')) return;
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
       title: const Text('تأكيد استرجاع المعدة'),
       content: Text('هل تم استلام ${rental['equipment_name']} من العميل فعلاً؟'),
