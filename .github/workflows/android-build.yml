@@ -75,7 +75,6 @@ jobs:
           PY
 
       - name: Configure stable Android release signing
-        if: matrix.app == 'sindar_app'
         working-directory: ${{ matrix.app }}
         env:
           SINDAR_KEYSTORE_BASE64: ${{ secrets.SINDAR_KEYSTORE_BASE64 }}
@@ -91,10 +90,8 @@ jobs:
           names = ("SINDAR_KEYSTORE_BASE64", "SINDAR_KEYSTORE_PASSWORD",
                    "SINDAR_KEY_ALIAS", "SINDAR_KEY_PASSWORD")
           present = [bool(os.environ.get(name)) for name in names]
-          if not any(present):
-              print("::warning::No stable signing secrets configured; this APK uses the generated development signature. Do not register its SHA-1 for production.")
-          elif not all(present):
-              raise SystemExit("Incomplete Android signing secrets. Configure all four SINDAR_* secrets.")
+          if not all(present):
+              raise SystemExit("Production signing blocked: configure all four SINDAR_* secrets.")
           else:
               destination = Path("android/app/release-keystore.jks")
               destination.write_bytes(base64.b64decode(os.environ["SINDAR_KEYSTORE_BASE64"], validate=True))
