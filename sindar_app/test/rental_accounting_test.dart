@@ -93,7 +93,8 @@ void main() {
       asOf: start.add(const Duration(hours: 4)));
     expect(await balance('2106'), closeTo(0, 0.01));
     expect(await balance('4104'), 200);
-    expect(await balance('1101'), 75);
+    // balance() measures credit - debit; cash is a debit-balance asset.
+    expect(-await balance('1101'), 75);
   });
 
   test('catalog purchase and sale price edits affect future selection', () async {
