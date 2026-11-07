@@ -442,8 +442,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   Future<void> _editPrices(ItemRecord item) async {
     if (!await SessionController.instance.can('inventory', action: 'edit')) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ليس لديك صلاحية تعديل الأصناف')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ليس لديك صلاحية تعديل الأصناف')));
+      }
       return;
     }
     if (!mounted) return;
