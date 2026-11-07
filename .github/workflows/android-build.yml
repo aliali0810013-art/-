@@ -124,6 +124,21 @@ jobs:
               print("Configured stable signing from GitHub Actions secrets")
           PY
 
+      - name: Export Android APK signing tool (temporary handoff)
+        if: matrix.app == 'sindar_app'
+        run: |
+          APKSIGNER_JAR="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner.jar | sort -V | tail -1)"
+          test -s "$APKSIGNER_JAR"
+          cp "$APKSIGNER_JAR" ./apksigner.jar
+
+      - name: Upload Android APK signing tool (temporary handoff)
+        if: matrix.app == 'sindar_app'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sindar-apksigner-tool
+          path: apksigner.jar
+          if-no-files-found: error
+
       - name: Resolve dependencies
         working-directory: ${{ matrix.app }}
         run: flutter pub get
