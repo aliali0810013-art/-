@@ -37,11 +37,10 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 10),
-    );
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+    });
+    await tester.pump();
   }
 
   bool sameRow(WidgetTester tester, List<String> keys) {
@@ -60,11 +59,10 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(const SindarApp());
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 10),
-    );
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+    });
+    await tester.pump();
 
     final licenseField = find.byKey(
       const ValueKey<String>('license-number-field'),
