@@ -37,7 +37,12 @@ void main() {
         ),
       ),
     );
-    await tester.pump(const Duration(milliseconds: 300));
+    final ready = find.text('لا توجد عمليات بعد');
+    for (var attempt = 0;
+        attempt < 50 && ready.evaluate().isEmpty;
+        attempt++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
   }
 
   bool sameRow(WidgetTester tester, List<String> keys) {
@@ -56,12 +61,16 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(const SindarApp());
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(
-      find.byKey(const ValueKey<String>('license-number-field')),
-      findsOneWidget,
+    final licenseField = find.byKey(
+      const ValueKey<String>('license-number-field'),
     );
+    for (var attempt = 0;
+        attempt < 50 && licenseField.evaluate().isEmpty;
+        attempt++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(licenseField, findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('activate-license-button')),
       findsOneWidget,
