@@ -33,8 +33,8 @@ class SindarDatabase {
         }
         if (oldVersion < 3) {
           await _createEquipmentSchema(database);
-        }
-        if (oldVersion < 4) {
+          await _ensureNewRentalAccounts(database);
+        } else if (oldVersion < 4) {
           await _upgradeEquipmentPricing(database);
         }
       },
@@ -103,6 +103,10 @@ class SindarDatabase {
     for (final statement in columns) {
       await db.execute(statement);
     }
+    await _ensureNewRentalAccounts(db);
+  }
+
+  Future<void> _ensureNewRentalAccounts(DatabaseExecutor db) async {
     for (final account in StandardChartOfAccounts.accounts) {
       if (account.code == '2106' || account.code == '4104') {
         await db.insert('accounts', account.toMap(),
