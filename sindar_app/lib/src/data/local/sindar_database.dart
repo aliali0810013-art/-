@@ -18,22 +18,58 @@ class SindarDatabase {
     final root = await getDatabasesPath();
     final db = await openDatabase(
       p.join(root, 'sindar.db'),
-      version: 2,
+      version: 3,
       onConfigure: (database) async {
         await database.execute('PRAGMA foreign_keys = ON');
       },
       onCreate: (database, version) async {
         await _createBaseSchema(database);
         await _createOperationalSchema(database);
+        await _createEquipmentSchema(database);
       },
       onUpgrade: (database, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _createOperationalSchema(database);
         }
+        if (oldVersion < 3) {
+          await _createEquipmentSchema(database);
+        }
       },
     );
     _database = db;
     return db;
+  }
+
+  Future<void> _createEquipmentSchema(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS rental_equipment (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        serial_number TEXT,
+        daily_rate REAL NOT NULL DEFAULT 0 CHECK(daily_rate >= 0),
+        sale_price REAL NOT NULL DEFAULT 0 CHECK(sale_price >= 0),
+        status TEXT NOT NULL DEFAULT 'available'
+          CHECK(status IN ('available','rented','maintenance','sold')),
+        notes TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS equipment_rentals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        equipment_id INTEGER NOT NULL REFERENCES rental_equipment(id),
+        customer_id INTEGER NOT NULL REFERENCES parties(id),
+        document_id INTEGER NOT NULL UNIQUE REFERENCES documents(id),
+        start_at TEXT NOT NULL,
+        due_at TEXT NOT NULL,
+        returned_at TEXT,
+        status TEXT NOT NULL DEFAULT 'active'
+          CHECK(status IN ('active','returned')),
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_equipment_rentals_equipment ON equipment_rentals(equipment_id,status)');
   }
 
   Future<void> _createBaseSchema(DatabaseExecutor db) async {
@@ -80,6 +116,7 @@ class SindarDatabase {
       'financial_claim',
       'official_letter',
       'payroll',
+      'equipment_rental',
     ];
     for (final type in sequenceTypes) {
       await db.insert(

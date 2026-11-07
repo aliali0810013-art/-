@@ -13,6 +13,7 @@ import 'assets_payroll_reports_screens.dart';
 import 'chart_of_accounts_screen.dart';
 import 'document_studio_screen.dart';
 import 'saved_documents_screen.dart';
+import 'equipment_rental_screen.dart';
 import 'journal_voucher_screens.dart';
 import 'party_inventory_screens.dart';
 import 'sales_purchase_screens.dart';
@@ -42,6 +43,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     _ModuleData('reports', 'التقارير\nوالتحليلات', Icons.query_stats_rounded, Color(0xFF0D3A72), AppColors.gold),
     _ModuleData('purchases', 'المشتريات', Icons.shopping_cart_outlined, Color(0xFF0D3A72), AppColors.gold),
     _ModuleData('saved_documents', 'المستندات المحفوظة', Icons.folder_copy_outlined, Color(0xFF0D3A72), AppColors.gold),
+    _ModuleData('equipment', 'بيع وتأجير المعدات', Icons.handyman_outlined, Color(0xFF0D3A72), AppColors.gold),
     _ModuleData('inventory', 'المخزون\nوالأصناف', Icons.inventory_2_outlined, AppColors.gold, Color(0xFF0D3A72)),
     _ModuleData('assets', 'الأصول\nوالعهد', Icons.corporate_fare_rounded, Color(0xFF0D3A72), AppColors.gold),
     _ModuleData('payroll', 'الموظفون\nوالرواتب', Icons.business_center_outlined, Color(0xFF0D3A72), AppColors.gold),
@@ -147,6 +149,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         return _openPage('purchases', const PurchaseScreen());
       case 'saved_documents':
         return _openPage('documents', const SavedDocumentsScreen());
+      case 'equipment':
+        return _openPage('assets', const EquipmentRentalScreen());
       case 'inventory':
         return _openPage('inventory', const InventoryScreen());
       case 'assets':
