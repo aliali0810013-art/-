@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../data/local/sindar_database.dart';
 import 'operational_models.dart';
+import 'rental_accrual_service.dart';
 
 class ErpRepository {
   ErpRepository._();
@@ -193,6 +194,7 @@ class ErpRepository {
     required int month,
   }) async {
     await initialize();
+    await const RentalAccrualService().accrue();
     final db = await SindarDatabase.instance.database;
     final start = DateTime.utc(year, month);
     final end = month == 12
@@ -1301,13 +1303,17 @@ class ErpRepository {
       if (linkedDocumentId != null) {
         final linked = await txn.query(
           'documents',
-          columns: ['total', 'paid_amount'],
+          columns: ['total', 'paid_amount', 'party_id', 'type'],
           where: 'id = ?',
           whereArgs: [linkedDocumentId],
           limit: 1,
         );
         if (linked.isEmpty) {
           throw const FormatException('Linked document not found');
+        }
+        if (linked.first['type'] == 'equipment_rental' &&
+            (!receipt || partyId != linked.first['party_id'])) {
+          throw const FormatException('سند الإيجار يجب أن يكون قبضاً لنفس عميل العقد');
         }
         final outstanding =
             (linked.first['total'] as num).toDouble() -
@@ -1637,6 +1643,7 @@ class ErpRepository {
 
   Future<FinancialReportSnapshot> financialReport() async {
     await initialize();
+    await const RentalAccrualService().accrue();
     final db = await SindarDatabase.instance.database;
 
     Future<double> scalar(String sql, [List<Object?> args = const []]) async {

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
+import '../services/rental_pricing.dart';
+import '../services/rental_accrual_service.dart';
+import '../theme/app_theme.dart';
 
 import '../data/local/sindar_database.dart';
 import '../services/erp_repository.dart';
@@ -34,13 +37,20 @@ class EquipmentRentalService {
     required String name,
     String? serial,
     required double dailyRate,
+    required double hourlyRate,
+    required double weeklyRate,
+    required double monthlyRate,
+    required double yearlyRate,
+    required double purchasePrice,
     required double salePrice,
+    int? catalogItemId,
   }) async {
     if (code.trim().isEmpty || name.trim().isEmpty) {
       throw const FormatException('اسم المعدة ورمزها مطلوبان');
     }
-    if (dailyRate < 0 || salePrice < 0) {
-      throw const FormatException('أسعار المعدات لا يمكن أن تكون سالبة');
+    if ([dailyRate, hourlyRate, weeklyRate, monthlyRate, yearlyRate,
+          purchasePrice, salePrice].any((v) => !v.isFinite || v < 0)) {
+      throw const FormatException('أسعار المعدات يجب أن تكون غير سالبة');
     }
     final db = await SindarDatabase.instance.database;
     return db.insert('rental_equipment', {
@@ -48,6 +58,12 @@ class EquipmentRentalService {
       'name': name.trim(),
       'serial_number': serial?.trim(),
       'daily_rate': dailyRate,
+      'hourly_rate': hourlyRate,
+      'weekly_rate': weeklyRate,
+      'monthly_rate': monthlyRate,
+      'yearly_rate': yearlyRate,
+      'purchase_price': purchasePrice,
+      'catalog_item_id': catalogItemId,
       'sale_price': salePrice,
       'status': 'available',
       'created_at': DateTime.now().toUtc().toIso8601String(),
@@ -58,12 +74,9 @@ class EquipmentRentalService {
     required int equipmentId,
     required int customerId,
     required DateTime start,
-    required DateTime due,
+    required RentalPeriod period,
+    required int quantity,
   }) async {
-    final startDay = DateTime.utc(start.year, start.month, start.day);
-    final dueDay = DateTime.utc(due.year, due.month, due.day);
-    final days = dueDay.difference(startDay).inDays + 1;
-    if (days <= 0) throw const FormatException('تاريخ الإرجاع قبل تاريخ البداية');
     final policy = await SindarDatabase.instance.getLicensePolicy();
     final db = await SindarDatabase.instance.database;
     return db.transaction((txn) async {
@@ -78,9 +91,17 @@ class EquipmentRentalService {
         [equipmentId],
       )) ?? 0;
       if (active > 0) throw const FormatException('هذه المعدة مؤجرة بالفعل');
-      final rate = (equipment.first['daily_rate'] as num).toDouble();
-      if (rate <= 0) throw const FormatException('حدد إيجار المعدة اليومي أولاً');
-      final total = days * rate;
+      final field = switch (period) {
+        RentalPeriod.hour => 'hourly_rate',
+        RentalPeriod.day => 'daily_rate',
+        RentalPeriod.week => 'weekly_rate',
+        RentalPeriod.month => 'monthly_rate',
+        RentalPeriod.year => 'yearly_rate',
+      };
+      final rate = (equipment.first[field] as num).toDouble();
+      final quote = RentalQuote.create(
+        period: period, quantity: quantity, unitRate: rate, start: start);
+      final total = quote.total;
       final seq = await _nextSequence(txn, 'equipment_rental');
       final number = 'RNT-${seq.toString().padLeft(6, '0')}';
       final now = DateTime.now().toUtc().toIso8601String();
@@ -97,15 +118,15 @@ class EquipmentRentalService {
         'total': total,
         'paid_amount': 0,
         'currency_code': policy.currencyCode,
-        'notes': 'من ${startDay.toIso8601String().substring(0, 10)} '
-            'إلى ${dueDay.toIso8601String().substring(0, 10)}',
+        'notes': 'من ${quote.start.toIso8601String()} '
+            'إلى ${quote.due.toIso8601String()} | $quantity ${period.label}',
         'created_at': now,
       });
       await txn.insert('document_lines', {
         'document_id': docId,
         'description': 'تأجير ${equipment.first['name']} (${equipment.first['code']})'
-            ' لمدة $days يوم',
-        'quantity': days.toDouble(),
+            ' لمدة $quantity ${period.label}',
+        'quantity': quantity.toDouble(),
         'unit_price': rate,
         'vat_rate': 0,
         'line_net': total,
@@ -116,8 +137,12 @@ class EquipmentRentalService {
         'equipment_id': equipmentId,
         'customer_id': customerId,
         'document_id': docId,
-        'start_at': startDay.toIso8601String(),
-        'due_at': dueDay.toIso8601String(),
+        'start_at': quote.start.toIso8601String(),
+        'due_at': quote.due.toIso8601String(),
+        'billing_unit': period.code,
+        'billing_quantity': quantity,
+        'billing_rate': rate,
+        'earned_amount': 0,
         'status': 'active',
         'created_at': now,
       });
@@ -128,11 +153,10 @@ class EquipmentRentalService {
         'operation_type': 'إيجار معدات', 'debit': total,
         'credit': 0, 'document_id': docId,
       });
-      // Full charge recognized at contract issuance; settlement via regular
-      // receipt vouchers linked to this document.
+      // Contract invoiced now; recognize rent only as the time elapses.
       await _journal(txn, referenceType: 'equipment_rental',
-        referenceId: docId, description: 'إيراد تأجير $number',
-        debitAccount: '1103', creditAccount: '4102', amount: total);
+        referenceId: docId, description: 'فاتورة عقد تأجير $number',
+        debitAccount: '1103', creditAccount: '2106', amount: total);
       return docId;
     });
   }
