@@ -358,6 +358,24 @@ class ErpRepository {
     return rows.first;
   }
 
+  Future<List<Map<String, Object?>>> listSavedDocuments({int limit = 500}) async {
+    final db = await SindarDatabase.instance.database;
+    return db.query('documents', orderBy: 'date DESC, id DESC', limit: limit);
+  }
+
+  Future<List<Map<String, Object?>>> listSavedJournalEntries({int limit = 200}) async {
+    final db = await SindarDatabase.instance.database;
+    return db.query('journal_entries', orderBy: 'date DESC, id DESC', limit: limit);
+  }
+
+  Future<List<Map<String, Object?>>> savedJournalLines(int journalId) async {
+    final db = await SindarDatabase.instance.database;
+    return db.rawQuery(
+      'SELECT jl.account_code,a.name_ar,jl.debit,jl.credit,jl.memo '
+      'FROM journal_lines jl JOIN accounts a ON a.code=jl.account_code '
+      'WHERE jl.entry_id=? ORDER BY jl.id', [journalId]);
+  }
+
   Future<List<Map<String, Object?>>> documentLines(int documentId) async {
     final db = await SindarDatabase.instance.database;
     return db.query(
@@ -383,6 +401,11 @@ class ErpRepository {
               : DocumentType.simplifiedTaxInvoice)
           : DocumentType.commercialInvoice,
       'quotation' => DocumentType.quotation,
+      'purchase_invoice' => DocumentType.purchaseInvoice,
+      'equipment_rental' => DocumentType.rentalContract,
+      'payroll' => DocumentType.payrollVoucher,
+      'customer_statement' => DocumentType.customerStatement,
+      'supplier_statement' => DocumentType.supplierStatement,
       'receipt_voucher' => DocumentType.receiptVoucher,
       'payment_voucher' => DocumentType.paymentVoucher,
       'official_letter' => DocumentType.officialLetter,
@@ -412,6 +435,9 @@ class ErpRepository {
                 ? (line['vat_rate'] as num).toDouble()
                 : 0,
           ),
+        if (lineRows.isEmpty && (rawType == 'receipt_voucher' || rawType == 'payment_voucher' || rawType == 'payroll'))
+          DocumentLine(description: (row['notes'] as String?)?.trim().isNotEmpty == true ? row['notes']! as String : type.titleAr,
+            quantity: 1, unitPrice: (row['total'] as num).toDouble()),
       ],
       contacts: contacts,
       identity: const DocumentIdentity(),

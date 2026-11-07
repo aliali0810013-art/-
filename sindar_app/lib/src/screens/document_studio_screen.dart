@@ -8,6 +8,7 @@ import '../services/erp_repository.dart';
 import '../services/session_controller.dart';
 import '../theme/app_theme.dart';
 import 'universal_scanner_screen.dart';
+import 'saved_documents_screen.dart';
 
 class DocumentStudioScreen extends StatefulWidget {
   const DocumentStudioScreen({super.key, this.initialType});
@@ -31,6 +32,7 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
   final _contacts = <ContactChannel>[];
 
   LicensePolicy _policy = LicensePolicy.lockedDefault;
+  Map<String, String> _company = const {};
   DocumentType _type = DocumentType.commercialInvoice;
   DocumentIdentity _identity = const DocumentIdentity();
   bool _loading = true;
@@ -44,9 +46,12 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
   Future<void> _loadPolicy() async {
     final policy = await SindarDatabase.instance.getLicensePolicy();
     final contacts = await ErpRepository.instance.footerContacts();
+    final company = await ErpRepository.instance.companySettings();
     if (!mounted) return;
     setState(() {
       _policy = policy;
+      _company = company;
+      _sellerVat.text = company['seller_vat_number'] ?? '';
       _contacts
         ..clear()
         ..addAll(contacts);
@@ -104,9 +109,9 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
       number: _number.text.trim().isEmpty ? 'DOC-1' : _number.text.trim(),
       date: DateTime.now(),
       company: CompanyProfile(
-        nameAr: 'مؤسسة سندار التجارية',
-        nameEn: 'SINDAR Trading Est.',
-        commercialRegistration: '1010101010',
+        nameAr: _company['company_name_ar'] ?? 'المنشأة',
+        nameEn: _company['company_name_en'] ?? '',
+        commercialRegistration: _company['company_cr'] ?? '',
         vatNumber: _policy.isTaxEnabled ? _sellerVat.text.trim() : null,
       ),
       lines: lines,
@@ -171,9 +176,9 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
     try {
       final id = await ErpRepository.instance.saveStandaloneDocument(_draft());
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تم حفظ المستند في SQLite برقم داخلي $id')),
-      );
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => SavedDocumentPreviewScreen(documentId: id),
+      ));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -365,7 +370,9 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
           ),
           const SizedBox(height: 18),
           if (_type == DocumentType.officialLetter ||
-              _type == DocumentType.financialClaim) ...[
+              _type == DocumentType.financialClaim ||
+              _type == DocumentType.customerStatement ||
+              _type == DocumentType.supplierStatement) ...[
             FilledButton.tonalIcon(
               onPressed: _saveStandalone,
               icon: const Icon(Icons.save_outlined),

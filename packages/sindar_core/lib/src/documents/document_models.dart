@@ -11,6 +11,9 @@ enum DocumentType {
   financialClaim,
   customerStatement,
   supplierStatement,
+  purchaseInvoice,
+  rentalContract,
+  payrollVoucher,
 }
 
 extension DocumentTypeX on DocumentType {
@@ -34,6 +37,9 @@ extension DocumentTypeX on DocumentType {
         DocumentType.financialClaim => 'مطالبة مالية',
         DocumentType.customerStatement => 'كشف حساب عميل',
         DocumentType.supplierStatement => 'كشف حساب مورد',
+        DocumentType.purchaseInvoice => 'فاتورة مشتريات',
+        DocumentType.rentalContract => 'عقد تأجير معدات',
+        DocumentType.payrollVoucher => 'مسير رواتب',
       };
 }
 
