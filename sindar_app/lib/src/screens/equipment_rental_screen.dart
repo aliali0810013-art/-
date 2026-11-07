@@ -464,9 +464,11 @@ class _EquipmentRentalScreenState extends State<EquipmentRentalScreen> {
             final count = int.tryParse(quantity.text.trim());
             RentalQuote? quote;
             try {
-              if (count != null) quote = RentalQuote.create(
-                period: period, quantity: count,
-                unitRate: _rate(equipment, period), start: start);
+              if (count != null) {
+                quote = RentalQuote.create(
+                  period: period, quantity: count,
+                  unitRate: _rate(equipment, period), start: start);
+              }
             } on FormatException { /* Invalid period, show validation below. */ }
             return AlertDialog(
               title: Text('عقد تأجير • ${equipment['name']}'),
@@ -529,7 +531,7 @@ class _EquipmentRentalScreenState extends State<EquipmentRentalScreen> {
                         ]),
                       )),
                   ]),
-                )),
+                ),
               ),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(dialogContext, false),
