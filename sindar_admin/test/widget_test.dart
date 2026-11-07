@@ -16,11 +16,19 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(const SindarAdminApp());
-    await tester.pump(const Duration(milliseconds: 120));
+
+    final logo = find.byKey(
+      const ValueKey<String>('sindar-official-logo'),
+    );
+    for (var attempt = 0;
+        attempt < 30 && logo.evaluate().isEmpty;
+        attempt++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
 
     expect(find.text('SINDAR Master Admin'), findsOneWidget);
     expect(find.text('ترخيص جديد'), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('sindar-official-logo')), findsOneWidget);
+    expect(logo, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
