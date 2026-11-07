@@ -148,6 +148,10 @@ jobs:
 
       - name: Build release APK
         working-directory: ${{ matrix.app }}
+        env:
+          SINDAR_KEYSTORE_PASSWORD: ${{ secrets.SINDAR_KEYSTORE_PASSWORD }}
+          SINDAR_KEY_ALIAS: ${{ secrets.SINDAR_KEY_ALIAS }}
+          SINDAR_KEY_PASSWORD: ${{ secrets.SINDAR_KEY_PASSWORD }}
         run: flutter build apk --release
 
       - name: Stage final APK
