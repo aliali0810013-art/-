@@ -1,7 +1,7 @@
 name: sindar_admin
 description: SINDAR Master Admin licensing application.
 publish_to: "none"
-version: 0.1.0+1
+version: 1.0.0+100
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -28,3 +28,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/branding/sindar_logo.svg
+    - assets/branding/sindar_brand_full.webp

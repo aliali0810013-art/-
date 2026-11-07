@@ -2,7 +2,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -144,12 +143,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 padding: const EdgeInsets.all(20),
                 children: [
                   Center(
-                    child: SizedBox(
+                    child: Container(
+                      key: const ValueKey<String>('sindar-official-logo'),
                       width: 360,
-                      height: 100,
-                      child: SvgPicture.asset(
-                        'assets/branding/sindar_logo.svg',
+                      constraints: const BoxConstraints(maxWidth: 360),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: const Color(0x33E5A93C),
+                        ),
+                      ),
+                      child: Image.asset(
+                        'assets/branding/sindar_brand_full.webp',
+                        height: 92,
                         fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
                       ),
                     ),
                   ),

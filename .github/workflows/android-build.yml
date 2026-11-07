@@ -43,12 +43,15 @@ jobs:
         working-directory: ${{ matrix.app }}
         run: flutter create --platforms=android --org com.sindar --project-name ${{ matrix.app }} .
 
-      - name: Patch Android permissions
+      - name: Patch Android branding and permissions
         working-directory: ${{ matrix.app }}
         run: |
           python3 - <<'PY'
           from pathlib import Path
           path = Path("android/app/src/main/AndroidManifest.xml")
+          icon = Path("android/app/src/main/res/drawable/sindar_launcher_icon.png")
+          if not icon.exists():
+              raise SystemExit("Tracked SINDAR launcher icon is missing")
           text = path.read_text()
           marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
           permissions = (
@@ -57,6 +60,17 @@ jobs:
           )
           if 'android.permission.CAMERA' not in text:
               text = text.replace(marker, marker + permissions)
+
+          app_name = Path.cwd().name
+          label = 'سندار' if app_name == 'sindar_app' else 'سندار - الإدارة'
+          text = text.replace(
+              'android:label="' + app_name + '"',
+              'android:label="' + label + '"',
+          )
+          text = text.replace(
+              'android:icon="@mipmap/ic_launcher"',
+              'android:icon="@drawable/sindar_launcher_icon"',
+          )
           path.write_text(text)
           PY
 

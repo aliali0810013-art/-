@@ -20,6 +20,7 @@ void main() {
 
     expect(find.text('SINDAR Master Admin'), findsOneWidget);
     expect(find.text('ترخيص جديد'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('sindar-official-logo')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

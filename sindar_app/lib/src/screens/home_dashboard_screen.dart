@@ -1,7 +1,6 @@
 // ignore_for_file: prefer_const_constructors
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
 import 'package:sindar_core/sindar_core.dart';
 
@@ -275,12 +274,26 @@ class _TopHeader extends StatelessWidget {
                 child: const _CompanySelector(),
               ),
               Center(
-                child: SizedBox(
-                  width: 132,
+                child: Container(
+                  key: const ValueKey<String>('sindar-official-logo'),
+                  width: 138,
                   height: 60,
-                  child: SvgPicture.asset(
-                    'assets/branding/sindar_header_logo.svg',
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.gold.withValues(alpha: .70),
+                      width: 1.2,
+                    ),
+                  ),
+                  child: Image.asset(
+                    'assets/branding/sindar_brand_full.webp',
                     fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
                   ),
                 ),
               ),

@@ -51,6 +51,7 @@ void main() {
     );
     expect(find.text('الفرع الرئيسي'), findsOneWidget);
     expect(find.text('نوفمبر 2026'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('sindar-official-logo')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

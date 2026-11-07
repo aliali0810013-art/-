@@ -1,7 +1,7 @@
 name: sindar_app
 description: SINDAR accounting and document management app.
 publish_to: "none"
-version: 0.1.0+1
+version: 1.0.0+100
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -44,3 +44,4 @@ flutter:
   assets:
     - assets/branding/sindar_logo.svg
     - assets/branding/sindar_header_logo.svg
+    - assets/branding/sindar_brand_full.webp
