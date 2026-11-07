@@ -15,11 +15,13 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
   CloudSyncStatus? _status;
   bool _loading = true;
   bool _working = false;
+  String? _configuredWebClientId;
 
   @override
   void initState() {
     super.initState();
     _refresh(refreshRemote: true);
+    _loadOAuthConfiguration();
   }
 
   Future<void> _refresh({bool refreshRemote = false}) async {
@@ -31,6 +33,43 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
       _status = status;
       _loading = false;
     });
+  }
+
+  Future<void> _loadOAuthConfiguration() async {
+    final value = await FreeGoogleDriveSyncService.instance.configuredWebClientId();
+    if (!mounted) return;
+    setState(() => _configuredWebClientId = value);
+  }
+
+  Future<void> _configureOAuth() async {
+    final controller = TextEditingController(text: _configuredWebClientId ?? '');
+    try {
+      final accepted = await showDialog<bool>(context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('إعداد Google Drive'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('أدخل Web Client ID من Google Cloud. يجب أيضاً إنشاء Android OAuth لنفس اسم الحزمة وبصمة SHA-1.'),
+            const SizedBox(height: 12),
+            TextField(controller: controller, keyboardType: TextInputType.url,
+              decoration: const InputDecoration(labelText: 'Web Client ID',
+                hintText: '123456-xxxx.apps.googleusercontent.com',
+                border: OutlineInputBorder())),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('حفظ الإعداد')),
+          ],
+        ));
+      if (accepted != true) return;
+      await _run(() async {
+        await FreeGoogleDriveSyncService.instance.saveWebClientId(controller.text);
+        await _loadOAuthConfiguration();
+        await _refresh();
+        _message('تم حفظ إعداد OAuth. يمكنك الآن الضغط على ربط Google Drive.');
+      });
+    } finally {
+      controller.dispose();
+    }
   }
 
   Future<void> _connect() async {
@@ -208,6 +247,16 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                Card(child: ListTile(
+                  leading: const Icon(Icons.settings_applications_outlined),
+                  title: const Text('إعداد اتصال Google OAuth'),
+                  subtitle: Text(_configuredWebClientId == null
+                      ? 'غير مهيأ: أدخل Web Client ID أولاً'
+                      : 'Web Client ID محفوظ'),
+                  trailing: const Icon(Icons.edit_outlined),
+                  onTap: _working ? null : _configureOAuth,
+                )),
+                const SizedBox(height: 12),
                 _ConnectionCard(
                   status: status,
                   busy: _working,
