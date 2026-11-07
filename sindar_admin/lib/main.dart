@@ -77,7 +77,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('مفتاح التفعيل — ' + license.licenseNumber),
+        title: Text('رقم الترخيص المختصر — ' + license.licenseNumber),
         content: SizedBox(
           width: 420,
           child: Column(
@@ -91,8 +91,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
               const SizedBox(height: 12),
               SelectableText(
                 license.token,
-                maxLines: 5,
-                style: const TextStyle(fontSize: 11),
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),
@@ -102,7 +106,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: license.token));
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('تم نسخ مفتاح التفعيل')),
+                const SnackBar(content: Text('تم نسخ رقم الترخيص المختصر')),
               );
             },
             icon: const Icon(Icons.copy),
@@ -281,7 +285,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           spacing: 4,
                           children: [
                             IconButton(
-                              tooltip: 'QR / Token',
+                              tooltip: 'QR / رقم الترخيص',
                               onPressed: () => _showToken(license),
                               icon: const Icon(Icons.qr_code_2),
                             ),

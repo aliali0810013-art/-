@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'src/theme/app_theme.dart';
+import 'src/screens/license_gate_screen.dart';
 import 'src/services/free_google_drive_sync_service.dart';
-import 'src/screens/home_dashboard_screen.dart';
+import 'src/theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.manual,
+    overlays: SystemUiOverlay.values,
+  );
   await CloudSyncScheduler.initialize();
-  await CloudSyncScheduler.restoreRegistration();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: AppColors.navy,
       statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
       systemNavigationBarColor: AppColors.navy,
       systemNavigationBarIconBrightness: Brightness.light,
+      systemNavigationBarDividerColor: AppColors.navy,
     ),
   );
   runApp(const SindarApp());
@@ -33,10 +38,16 @@ class SindarApp extends StatelessWidget {
       builder: (context, child) {
         return Directionality(
           textDirection: TextDirection.rtl,
-          child: child ?? const SizedBox.shrink(),
+          child: SafeArea(
+            top: true,
+            bottom: true,
+            left: false,
+            right: false,
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
-      home: const HomeDashboardScreen(),
+      home: const LicenseGateScreen(),
     );
   }
 }

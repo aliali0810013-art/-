@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:sindar_app/src/data/local/sindar_database.dart';
 import 'package:sindar_app/src/services/erp_repository.dart';
 import 'package:sindar_app/src/services/operational_models.dart';
+import 'package:sindar_core/sindar_core.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -19,34 +20,67 @@ void main() {
     await deleteDatabase(p.join(root, 'sindar.db'));
   }
 
+  Future<void> activate({
+    bool tax = true,
+    int maxUsers = 5,
+  }) async {
+    final grant = LicenseGrant(
+      organizationName: 'منشأة الاختبار',
+      licenseNumber: 'LIC-TEST',
+      expiresAt: DateTime.utc(2035, 1, 1),
+      isActive: true,
+      policy: LicensePolicy(
+        customerId: 'LIC-TEST',
+        isTaxEnabled: tax,
+        countryCode: 'SA',
+        currencyCode: 'SAR',
+        currencySymbol: 'ر.س',
+        maxUsers: maxUsers,
+      ),
+    );
+    final token = LicenseTokenCodec.encode(
+      grant: grant,
+      signingSecret: ErpRepository.licenseSigningSecret,
+    );
+    await ErpRepository.instance.applyLicenseToken(token);
+  }
+
+  Future<ItemRecord> addStockItem() async {
+    await ErpRepository.instance.addItem(
+      code: 'SKU-001',
+      barcode: '6281000001118',
+      name: 'صنف اختبار فعلي',
+      purchasePrice: 50,
+      salePrice: 75,
+      quantity: 100,
+      reorderLevel: 5,
+    );
+    return (await ErpRepository.instance.listItems())
+        .firstWhere((item) => item.code == 'SKU-001');
+  }
+
   setUp(resetDatabase);
   tearDown(() async => SindarDatabase.instance.close());
 
-  test('demo seed reproduces reference dashboard values from SQLite', () async {
+  test('fresh production database contains no demo operations', () async {
     final snapshot = await ErpRepository.instance.dashboard(
       year: 2026,
       month: 11,
     );
 
-    expect(snapshot.sales, closeTo(146500, .001));
-    expect(snapshot.purchases, closeTo(68750, .001));
-    expect(snapshot.expenses, closeTo(17320, .001));
-    expect(snapshot.profit, closeTo(28450, .001));
-    expect(
-      snapshot.recent.map((e) => e.number),
-      containsAll([
-        'INV-000245',
-        'QUO-000128',
-        'REC-000067',
-        'PUR-000097',
-      ]),
-    );
+    expect(snapshot.sales, 0);
+    expect(snapshot.purchases, 0);
+    expect(snapshot.expenses, 0);
+    expect(snapshot.profit, 0);
+    expect(snapshot.recent, isEmpty);
+    expect(await ErpRepository.instance.listItems(), isEmpty);
+    expect(await ErpRepository.instance.listParties('customer'), isEmpty);
+    expect(await ErpRepository.instance.listParties('supplier'), isEmpty);
   });
 
   test('approved bank sale updates stock and posts revenue VAT and COGS', () async {
-    await ErpRepository.instance.initialize();
-    final items = await ErpRepository.instance.listItems();
-    final item = items.firstWhere((e) => e.code == 'ITM-001');
+    await activate();
+    final item = await addStockItem();
     final beforeQty = item.quantity;
 
     final invoiceId = await ErpRepository.instance.createSalesInvoice(
@@ -97,7 +131,7 @@ void main() {
   });
 
   test('transient supplier cannot be used for credit purchase', () async {
-    await ErpRepository.instance.initialize();
+    await activate();
 
     expect(
       () => ErpRepository.instance.createPurchase(
@@ -117,7 +151,7 @@ void main() {
   });
 
   test('maxUsers is enforced by the licensed policy', () async {
-    await ErpRepository.instance.initialize();
+    await activate(maxUsers: 5);
     for (var i = 1; i <= 4; i++) {
       await ErpRepository.instance.createUser(
         name: 'مستخدم ' + i.toString(),
@@ -147,9 +181,8 @@ void main() {
   });
 
   test('editing a sale reverses old stock and journals before reposting', () async {
-    await ErpRepository.instance.initialize();
-    final item = (await ErpRepository.instance.listItems())
-        .firstWhere((e) => e.code == 'ITM-001');
+    await activate();
+    final item = await addStockItem();
     final beforeQty = item.quantity;
 
     final invoiceId = await ErpRepository.instance.createSalesInvoice(
@@ -209,5 +242,4 @@ void main() {
     expect((bank.first['value'] as num).toDouble(), closeTo(0, .001));
     expect((cash.first['value'] as num).toDouble(), closeTo(86.25, .001));
   });
-
 }

@@ -46,7 +46,8 @@ class LicenseGrant {
 }
 
 abstract final class LicenseTokenCodec {
-  static const _version = 'SINDAR-LIC-1';
+  static const _legacyVersion = 'SINDAR-LIC-1';
+  static const _compactVersion = 'S2';
 
   static String encode({
     required LicenseGrant grant,
@@ -55,14 +56,31 @@ abstract final class LicenseTokenCodec {
     if (signingSecret.length < 16) {
       throw const FormatException('Signing secret is too short');
     }
-    final payload = base64UrlEncode(utf8.encode(jsonEncode(grant.toJson())))
-        .replaceAll('=', '');
-    final signedValue = _version + '.' + payload;
-    final signature = Hmac(
+
+    final activeAndTax =
+        (grant.isActive ? 1 : 0) | (grant.policy.isTaxEnabled ? 2 : 0);
+    final expiresSeconds =
+        grant.expiresAt.toUtc().millisecondsSinceEpoch ~/ 1000;
+
+    final fields = <String>[
+      _compactVersion,
+      _encodeText(grant.organizationName.trim()),
+      _encodeText(grant.licenseNumber.trim()),
+      expiresSeconds.toRadixString(36),
+      activeAndTax.toRadixString(36),
+      grant.policy.countryCode.trim().toUpperCase(),
+      grant.policy.currencyCode.trim().toUpperCase(),
+      _encodeText(grant.policy.currencySymbol.trim()),
+      grant.policy.maxUsers.toRadixString(36),
+    ];
+
+    final signedValue = fields.join('.');
+    final fullSignature = Hmac(
       sha256,
       utf8.encode(signingSecret),
     ).convert(utf8.encode(signedValue));
-    final sig = base64UrlEncode(signature.bytes).replaceAll('=', '');
+    final shortSignature = fullSignature.bytes.take(16).toList(growable: false);
+    final sig = base64UrlEncode(shortSignature).replaceAll('=', '');
     return signedValue + '.' + sig;
   }
 
@@ -70,9 +88,75 @@ abstract final class LicenseTokenCodec {
     required String token,
     required String signingSecret,
   }) {
-    final parts = token.trim().split('.');
-    if (parts.length != 3 || parts[0] != _version) {
-      throw const FormatException('Invalid SINDAR license token');
+    final normalized = token.trim();
+    if (normalized.startsWith(_compactVersion + '.')) {
+      return _decodeCompact(
+        token: normalized,
+        signingSecret: signingSecret,
+      );
+    }
+    return _decodeLegacy(
+      token: normalized,
+      signingSecret: signingSecret,
+    );
+  }
+
+  static LicenseGrant _decodeCompact({
+    required String token,
+    required String signingSecret,
+  }) {
+    final parts = token.split('.');
+    if (parts.length != 10 || parts[0] != _compactVersion) {
+      throw const FormatException('رقم ترخيص سندار غير صالح');
+    }
+
+    final signedValue = parts.take(9).join('.');
+    final expected = Hmac(
+      sha256,
+      utf8.encode(signingSecret),
+    ).convert(utf8.encode(signedValue)).bytes.take(16).toList(growable: false);
+    final actual = _decodeUrl(parts[9]);
+    if (!_constantTimeEquals(expected, actual)) {
+      throw const FormatException('توقيع رقم الترخيص غير صحيح');
+    }
+
+    final expiresSeconds = int.tryParse(parts[3], radix: 36);
+    final flags = int.tryParse(parts[4], radix: 36);
+    final maxUsers = int.tryParse(parts[8], radix: 36);
+    if (expiresSeconds == null ||
+        flags == null ||
+        maxUsers == null ||
+        maxUsers < 1) {
+      throw const FormatException('بيانات رقم الترخيص غير صالحة');
+    }
+
+    final licenseNumber = _decodeText(parts[2]);
+    return LicenseGrant(
+      organizationName: _decodeText(parts[1]),
+      licenseNumber: licenseNumber,
+      expiresAt: DateTime.fromMillisecondsSinceEpoch(
+        expiresSeconds * 1000,
+        isUtc: true,
+      ),
+      isActive: (flags & 1) != 0,
+      policy: LicensePolicy(
+        customerId: licenseNumber,
+        isTaxEnabled: (flags & 2) != 0,
+        countryCode: parts[5],
+        currencyCode: parts[6],
+        currencySymbol: _decodeText(parts[7]),
+        maxUsers: maxUsers,
+      ),
+    );
+  }
+
+  static LicenseGrant _decodeLegacy({
+    required String token,
+    required String signingSecret,
+  }) {
+    final parts = token.split('.');
+    if (parts.length != 3 || parts[0] != _legacyVersion) {
+      throw const FormatException('رقم ترخيص سندار غير صالح');
     }
     final signedValue = parts[0] + '.' + parts[1];
     final expected = Hmac(
@@ -81,14 +165,22 @@ abstract final class LicenseTokenCodec {
     ).convert(utf8.encode(signedValue));
     final actual = _decodeUrl(parts[2]);
     if (!_constantTimeEquals(expected.bytes, actual)) {
-      throw const FormatException('License signature mismatch');
+      throw const FormatException('توقيع رقم الترخيص غير صحيح');
     }
     final raw = utf8.decode(_decodeUrl(parts[1]));
     final decoded = jsonDecode(raw);
     if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('Invalid license payload');
+      throw const FormatException('بيانات رقم الترخيص غير صالحة');
     }
     return LicenseGrant.fromJson(decoded);
+  }
+
+  static String _encodeText(String value) {
+    return base64UrlEncode(utf8.encode(value)).replaceAll('=', '');
+  }
+
+  static String _decodeText(String value) {
+    return utf8.decode(_decodeUrl(value));
   }
 
   static List<int> _decodeUrl(String input) {

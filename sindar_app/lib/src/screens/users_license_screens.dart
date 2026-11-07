@@ -589,17 +589,19 @@ class _LicenseActivationScreenState extends State<LicenseActivationScreen> {
           ),
           const SizedBox(height: 20),
           const Text(
-            'مفتاح الترخيص',
+            'رقم الترخيص',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _token,
-            minLines: 3,
-            maxLines: 7,
+            maxLines: 1,
+            textDirection: TextDirection.ltr,
+            autocorrect: false,
+            enableSuggestions: false,
             decoration: const InputDecoration(
-              labelText: 'License Token',
-              hintText: 'ألصق مفتاح التفعيل أو امسح QR',
+              labelText: 'رقم الترخيص',
+              hintText: 'S2...',
             ),
           ),
           const SizedBox(height: 12),
@@ -617,7 +619,7 @@ class _LicenseActivationScreenState extends State<LicenseActivationScreen> {
                 child: FilledButton.icon(
                   onPressed: _apply,
                   icon: const Icon(Icons.key_outlined),
-                  label: const Text('تطبيق الترخيص'),
+                  label: const Text('تفعيل الترخيص'),
                 ),
               ),
             ],

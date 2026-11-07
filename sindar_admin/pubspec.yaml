@@ -1,7 +1,7 @@
 name: sindar_admin
 description: SINDAR Master Admin licensing application.
 publish_to: "none"
-version: 1.0.0+100
+version: 1.0.1+101
 
 environment:
   sdk: ">=3.5.0 <4.0.0"

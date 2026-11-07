@@ -218,6 +218,7 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
                 _BackupStatusCard(status: status),
                 const SizedBox(height: 12),
                 _ActionPanel(
+                  connected: status.connected,
                   busy: _working,
                   onBackup: _backup,
                   onRestore: _restore,
@@ -475,11 +476,13 @@ class _StatusLine extends StatelessWidget {
 
 class _ActionPanel extends StatelessWidget {
   const _ActionPanel({
+    required this.connected,
     required this.busy,
     required this.onBackup,
     required this.onRestore,
   });
 
+  final bool connected;
   final bool busy;
   final VoidCallback onBackup;
   final VoidCallback onRestore;
@@ -492,7 +495,7 @@ class _ActionPanel extends StatelessWidget {
           child: SizedBox(
             height: 58,
             child: FilledButton.icon(
-              onPressed: busy ? null : onBackup,
+              onPressed: busy || !connected ? null : onBackup,
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.navy2,
               ),
@@ -517,7 +520,7 @@ class _ActionPanel extends StatelessWidget {
           child: SizedBox(
             height: 58,
             child: OutlinedButton.icon(
-              onPressed: busy ? null : onRestore,
+              onPressed: busy || !connected ? null : onRestore,
               icon: const Icon(Icons.restore_rounded),
               label: const Text(
                 'استعادة النسخة',

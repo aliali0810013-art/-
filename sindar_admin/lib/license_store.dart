@@ -89,7 +89,44 @@ class AdminLicenseStore {
   Future<List<AdminLicenseRecord>> list() async {
     final db = await database;
     final rows = await db.query('licenses', orderBy: 'id DESC');
-    return rows.map(AdminLicenseRecord.fromMap).toList(growable: false);
+    final result = <AdminLicenseRecord>[];
+    for (final row in rows) {
+      var record = AdminLicenseRecord.fromMap(row);
+      if (!record.token.startsWith('S2.')) {
+        final grant = LicenseGrant(
+          organizationName: record.organizationName,
+          licenseNumber: record.licenseNumber,
+          expiresAt: record.expiresAt.toUtc(),
+          isActive: record.isActive,
+          policy: LicensePolicy(
+            customerId: record.licenseNumber,
+            isTaxEnabled: record.isTaxEnabled,
+            countryCode: record.countryCode,
+            currencyCode: record.currencyCode,
+            currencySymbol: record.currencySymbol,
+            maxUsers: record.maxAllowedUsers,
+          ),
+        );
+        final compact = LicenseTokenCodec.encode(
+          grant: grant,
+          signingSecret: signingSecret,
+        );
+        await db.update(
+          'licenses',
+          {
+            'token': compact,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [record.id],
+        );
+        final updated = Map<String, Object?>.from(row)
+          ..['token'] = compact;
+        record = AdminLicenseRecord.fromMap(updated);
+      }
+      result.add(record);
+    }
+    return result;
   }
 
   Future<AdminLicenseRecord> save({

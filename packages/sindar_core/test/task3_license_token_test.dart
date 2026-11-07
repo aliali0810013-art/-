@@ -24,6 +24,9 @@ void main() {
       grant: grant,
       signingSecret: secret,
     );
+    expect(token.startsWith('S2.'), isTrue);
+    expect(token.length, lessThan(160));
+
     final decoded = LicenseTokenCodec.decodeAndVerify(
       token: token,
       signingSecret: secret,

@@ -28,7 +28,8 @@ class HomeDashboardScreen extends StatefulWidget {
 class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   DashboardSnapshot? _snapshot;
   LicensePolicy _policy = LicensePolicy.lockedDefault;
-  DateTime _month = DateTime(2026, 11);
+  DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
+  String _organizationName = 'المنشأة';
   bool _loading = true;
   int _navIndex = 0;
 
@@ -54,14 +55,22 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   Future<void> _refresh() async {
     await SessionController.instance.initialize();
     final policy = await SindarDatabase.instance.getLicensePolicy();
+    final grant = await ErpRepository.instance.currentLicenseGrant();
+    final company = await ErpRepository.instance.companySettings();
     final snapshot = await ErpRepository.instance.dashboard(
       year: _month.year,
       month: _month.month,
     );
+    final configuredName = company['company_name_ar']?.trim();
     if (!mounted) return;
     setState(() {
       _policy = policy;
       _snapshot = snapshot;
+      _organizationName = configuredName?.isNotEmpty == true
+          ? configuredName!
+          : (grant?.organizationName.trim().isNotEmpty == true
+              ? grant!.organizationName.trim()
+              : 'المنشأة');
       _loading = false;
     });
   }
@@ -206,7 +215,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       backgroundColor: AppColors.background,
       body: Column(
         children: [
-          const _TopHeader(),
+          _TopHeader(companyName: _organizationName),
           Expanded(
             child: RefreshIndicator(
               onRefresh: _refresh,
@@ -254,7 +263,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 }
 
 class _TopHeader extends StatelessWidget {
-  const _TopHeader();
+  const _TopHeader({required this.companyName});
+
+  final String companyName;
 
   @override
   Widget build(BuildContext context) {
@@ -271,7 +282,7 @@ class _TopHeader extends StatelessWidget {
                 start: 8,
                 top: 12,
                 bottom: 12,
-                child: const _CompanySelector(),
+                child: _CompanySelector(companyName: companyName),
               ),
               Center(
                 child: Container(
@@ -312,7 +323,9 @@ class _TopHeader extends StatelessWidget {
 }
 
 class _CompanySelector extends StatelessWidget {
-  const _CompanySelector();
+  const _CompanySelector({required this.companyName});
+
+  final String companyName;
 
   @override
   Widget build(BuildContext context) {
@@ -324,33 +337,36 @@ class _CompanySelector extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white24),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.apartment_rounded, color: Colors.white, size: 18),
-          SizedBox(width: 4),
+          const Icon(
+            Icons.apartment_rounded,
+            color: Colors.white,
+            size: 18,
+          ),
+          const SizedBox(width: 4),
           Expanded(
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerRight,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'مؤسسة سندار',
-                    maxLines: 1,
-                    style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800, height: 1.15),
-                  ),
-                  Text(
-                    'التجارية',
-                    maxLines: 1,
-                    style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w700, height: 1.15),
-                  ),
-                ],
+              child: Text(
+                companyName,
+                maxLines: 2,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  height: 1.15,
+                ),
               ),
             ),
           ),
-          Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 15),
+          const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: Colors.white70,
+            size: 15,
+          ),
         ],
       ),
     );
@@ -540,10 +556,10 @@ class _KpiRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final values = <_KpiData>[
-      _KpiData('kpi-sales', 'المبيعات', snapshot?.sales ?? 146500, '+15.3%', Icons.bar_chart_rounded, AppColors.gold, AppColors.cream, AppColors.green),
-      _KpiData('kpi-purchases', 'المشتريات', snapshot?.purchases ?? 68750, '+9.1%', Icons.shopping_cart_outlined, AppColors.blue, AppColors.sky, AppColors.green),
-      _KpiData('kpi-expenses', 'المصروفات', snapshot?.expenses ?? 17320, '+6.4%', Icons.receipt_long_outlined, Color(0xFFC84747), AppColors.rose, AppColors.red),
-      _KpiData('kpi-profit', 'الأرباح', snapshot?.profit ?? 28450, '+12.8%', Icons.toll_rounded, AppColors.green, AppColors.mint, AppColors.green),
+      _KpiData('kpi-sales', 'المبيعات', snapshot?.sales ?? 0, '—', Icons.bar_chart_rounded, AppColors.gold, AppColors.cream, AppColors.muted),
+      _KpiData('kpi-purchases', 'المشتريات', snapshot?.purchases ?? 0, '—', Icons.shopping_cart_outlined, AppColors.blue, AppColors.sky, AppColors.muted),
+      _KpiData('kpi-expenses', 'المصروفات', snapshot?.expenses ?? 0, '—', Icons.receipt_long_outlined, Color(0xFFC84747), AppColors.rose, AppColors.muted),
+      _KpiData('kpi-profit', 'الأرباح', snapshot?.profit ?? 0, '—', Icons.toll_rounded, AppColors.green, AppColors.mint, AppColors.muted),
     ];
     return SizedBox(
       height: 82,
@@ -620,7 +636,7 @@ class _KpiCard extends StatelessWidget {
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerRight,
             child: Text(
-              '↗ ${data.growth}',
+              data.growth,
               maxLines: 1,
               style: TextStyle(color: data.growthColor, fontWeight: FontWeight.w800, fontSize: 9),
             ),
@@ -854,6 +870,20 @@ class _RecentTransactions extends StatelessWidget {
           ),
           if (loading)
             const SizedBox(height: 54, child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
+          else if (rows.isEmpty)
+            const SizedBox(
+              height: 54,
+              child: Center(
+                child: Text(
+                  'لا توجد عمليات بعد',
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            )
           else
             for (var i = 0; i < rows.length; i++) ...[
               _RecentRow(operation: rows[i], currencySymbol: currencySymbol),

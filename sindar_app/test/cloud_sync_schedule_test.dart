@@ -17,7 +17,7 @@ void main() {
     );
     expect(
       CloudSyncSchedule.fromStorage(null),
-      CloudSyncSchedule.automatic,
+      CloudSyncSchedule.manual,
     );
     expect(
       CloudSyncSchedule.fromStorage('unknown'),

@@ -18,342 +18,173 @@ class ErpRepository {
 
   Future<void> initialize() async {
     final db = await SindarDatabase.instance.database;
-    final seeded = await SindarDatabase.instance.getSetting('demo_seeded_v2');
-    if (seeded == 'true') return;
+    await _purgeLegacyDemoData(db);
 
-    await db.transaction((txn) async {
-      final now = DateTime.utc(2026, 11, 7, 2).toIso8601String();
+    final grant = await currentLicenseGrant();
+    if (grant?.canOperate == true) {
+      await _ensureSystemAdmin(db);
+    }
+  }
 
-      const policy = LicensePolicy(
-        customerId: 'DEMO-SINDAR',
-        isTaxEnabled: true,
-        countryCode: 'SA',
-        currencyCode: 'SAR',
-        currencySymbol: 'ر.س',
-        maxUsers: 5,
-      );
-      await txn.insert(
-        'app_settings',
-        {
-          'setting_key': 'license_policy',
-          'setting_value': jsonEncode(policy.toJson()),
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-
-      const demoCompanySettings = <String, String>{
-        'company_name_ar': 'مؤسسة سندار التجارية',
-        'company_name_en': 'SINDAR Trading Est.',
-        'company_cr': '1010101010',
-        'seller_vat_number': '310123456700003',
-      };
-      for (final entry in demoCompanySettings.entries) {
-        await txn.insert(
-          'app_settings',
-          {
-            'setting_key': entry.key,
-            'setting_value': entry.value,
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
-      }
-
-      final userCount = Sqflite.firstIntValue(
-            await txn.rawQuery('SELECT COUNT(*) FROM users'),
-          ) ??
-          0;
-      if (userCount == 0) {
-        await txn.insert('users', {
-          'name': 'مدير النظام',
-          'role': 'admin',
-          'login_code': 'admin',
-          'pin_hash': _hashPin('1234'),
-          'active': 1,
-          'is_system_admin': 1,
-          'created_at': now,
-        });
-      }
-
-      final partyCount = Sqflite.firstIntValue(
-            await txn.rawQuery('SELECT COUNT(*) FROM parties'),
-          ) ??
-          0;
-      int customerId;
-      int supplierId;
-      if (partyCount == 0) {
-        customerId = await txn.insert('parties', {
-          'type': 'customer',
-          'name': 'شركة الواجهة الحديثة',
-          'vat_number': '310123456700003',
-          'commercial_registration': '1010101010',
-          'phone': '0500000001',
-          'credit_limit': 50000,
-          'opening_balance': 0,
-          'created_at': now,
-        });
-        supplierId = await txn.insert('parties', {
-          'type': 'supplier',
-          'name': 'مؤسسة التوريد الذهبي',
-          'vat_number': '310987654300003',
-          'commercial_registration': '1010102020',
-          'phone': '0500000002',
-          'credit_limit': 0,
-          'opening_balance': 0,
-          'created_at': now,
-        });
-      } else {
-        final customer = await txn.query(
-          'parties',
-          where: 'type = ?',
-          whereArgs: ['customer'],
-          limit: 1,
-        );
-        final supplier = await txn.query(
-          'parties',
-          where: 'type = ?',
-          whereArgs: ['supplier'],
-          limit: 1,
-        );
-        customerId = customer.isNotEmpty ? customer.first['id']! as int : 0;
-        supplierId = supplier.isNotEmpty ? supplier.first['id']! as int : 0;
-      }
-
-      final itemCount = Sqflite.firstIntValue(
-            await txn.rawQuery('SELECT COUNT(*) FROM items'),
-          ) ??
-          0;
-      if (itemCount == 0) {
-        await txn.insert('items', {
-          'code': 'ITM-001',
-          'barcode': '6281000000012',
-          'name': 'صنف تجريبي رئيسي',
-          'purchase_price': 50,
-          'sale_price': 75,
-          'quantity': 2500,
-          'reorder_level': 100,
-          'created_at': now,
-        });
-      }
-
-      final documentCount = Sqflite.firstIntValue(
-            await txn.rawQuery('SELECT COUNT(*) FROM documents'),
-          ) ??
-          0;
-      if (documentCount == 0) {
-        final invoice1 = await _seedDocument(
-          txn,
-          type: 'sales_invoice',
-          number: 'INV-000245',
-          date: DateTime.utc(2026, 11, 7, 10),
-          partyId: customerId == 0 ? null : customerId,
-          partyName: 'شركة الواجهة الحديثة',
-          partyVat: '310123456700003',
-          subtotal: 10869.57,
-          vat: 1630.43,
-          total: 12500,
-          currency: 'SAR',
-          paymentMethod: 'credit',
-        );
-        await _seedDocument(
-          txn,
-          type: 'sales_invoice',
-          number: 'INV-000244',
-          date: DateTime.utc(2026, 11, 1, 11),
-          partyId: customerId == 0 ? null : customerId,
-          partyName: 'شركة الواجهة الحديثة',
-          partyVat: '310123456700003',
-          subtotal: 116521.73,
-          vat: 17478.27,
-          total: 134000,
-          currency: 'SAR',
-          paymentMethod: 'cash',
-        );
-        await _seedDocument(
-          txn,
-          type: 'quotation',
-          number: 'QUO-000128',
-          date: DateTime.utc(2026, 11, 7, 9),
-          partyId: customerId == 0 ? null : customerId,
-          partyName: 'شركة الواجهة الحديثة',
-          subtotal: 6956.52,
-          vat: 1043.48,
-          total: 8000,
-          currency: 'SAR',
-          paymentMethod: 'cash',
-        );
-        final receiptId = await _seedDocument(
-          txn,
-          type: 'receipt_voucher',
-          number: 'REC-000067',
-          date: DateTime.utc(2026, 11, 6, 15),
-          partyId: customerId == 0 ? null : customerId,
-          partyName: 'شركة الواجهة الحديثة',
-          subtotal: 5500,
-          vat: 0,
-          total: 5500,
-          currency: 'SAR',
-          paymentMethod: 'cash',
-        );
-        final purchase1 = await _seedDocument(
-          txn,
-          type: 'purchase_invoice',
-          number: 'PUR-000097',
-          date: DateTime.utc(2026, 11, 5, 13),
-          partyId: supplierId == 0 ? null : supplierId,
-          partyName: 'مؤسسة التوريد الذهبي',
-          partyVat: '310987654300003',
-          subtotal: 5913.04,
-          vat: 886.96,
-          total: 6800,
-          currency: 'SAR',
-          paymentMethod: 'credit',
-        );
-        await _seedDocument(
-          txn,
-          type: 'purchase_invoice',
-          number: 'PUR-000096',
-          date: DateTime.utc(2026, 11, 2, 12),
-          partyId: supplierId == 0 ? null : supplierId,
-          partyName: 'مؤسسة التوريد الذهبي',
-          partyVat: '310987654300003',
-          subtotal: 53869.57,
-          vat: 8080.43,
-          total: 61950,
-          currency: 'SAR',
-          paymentMethod: 'credit',
-        );
-
-        await _postJournalTxn(
-          txn,
-          AutomaticPosting.sales(
-            date: DateTime.utc(2026, 11, 7),
-            referenceId: invoice1,
-            net: 127391.30,
-            vat: 19108.70,
-            onCredit: false,
+  Future<void> _ensureSystemAdmin(DatabaseExecutor db) async {
+    final count = Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM users WHERE is_system_admin = 1',
           ),
-        );
-        await _postJournalTxn(
-          txn,
-          JournalDraft(
-            date: DateTime.utc(2026, 11, 7),
-            description: 'تكلفة البضاعة المباعة - بيانات تجريبية',
-            referenceType: 'demo_cogs',
-            referenceId: 1,
-            lines: const [
-              JournalLineDraft(accountCode: '5101', debit: 81621.30),
-              JournalLineDraft(accountCode: '1104', credit: 81621.30),
-            ],
-          ),
-        );
-        await _postJournalTxn(
-          txn,
-          JournalDraft(
-            date: DateTime.utc(2026, 11, 7),
-            description: 'مصروفات تشغيلية - بيانات تجريبية',
-            referenceType: 'demo_expense',
-            referenceId: 1,
-            lines: const [
-              JournalLineDraft(accountCode: '5207', debit: 17320),
-              JournalLineDraft(accountCode: '1101', credit: 17320),
-            ],
-          ),
-        );
-        await _postJournalTxn(
-          txn,
-          AutomaticPosting.receipt(
-            date: DateTime.utc(2026, 11, 6),
-            referenceId: receiptId,
-            amount: 5500,
-          ),
-        );
+        ) ??
+        0;
+    if (count > 0) return;
 
-        if (customerId != 0) {
-          await txn.insert('party_movements', {
-            'party_id': customerId,
-            'date': DateTime.utc(2026, 11, 7, 10).toIso8601String(),
-            'reference': 'INV-000245',
-            'operation_type': 'فاتورة مبيعات',
-            'debit': 12500,
-            'credit': 0,
-            'document_id': invoice1,
-          });
-          await txn.insert('party_movements', {
-            'party_id': customerId,
-            'date': DateTime.utc(2026, 11, 6, 15).toIso8601String(),
-            'reference': 'REC-000067',
-            'operation_type': 'سند قبض',
-            'debit': 0,
-            'credit': 5500,
-            'document_id': receiptId,
-          });
-        }
-        if (supplierId != 0) {
-          await txn.insert('party_movements', {
-            'party_id': supplierId,
-            'date': DateTime.utc(2026, 11, 5, 13).toIso8601String(),
-            'reference': 'PUR-000097',
-            'operation_type': 'فاتورة مشتريات',
-            'debit': 0,
-            'credit': 6800,
-            'document_id': purchase1,
-          });
-        }
-
-        final sequenceValues = <String, int>{
-          'sales_invoice': 246,
-          'purchase_invoice': 98,
-          'quotation': 129,
-          'receipt_voucher': 68,
-        };
-        for (final entry in sequenceValues.entries) {
-          await txn.update(
-            'document_sequences',
-            {'next_number': entry.value},
-            where: 'document_type = ?',
-            whereArgs: [entry.key],
-          );
-        }
-      }
-
-      await txn.insert(
-        'app_settings',
-        {'setting_key': 'demo_seeded_v2', 'setting_value': 'true'},
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+    await db.insert('users', {
+      'name': 'مدير النظام',
+      'role': 'admin',
+      'login_code': 'admin',
+      'pin_hash': _hashPin('1234'),
+      'active': 1,
+      'is_system_admin': 1,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
     });
   }
 
-  static Future<int> _seedDocument(
-    DatabaseExecutor txn, {
-    required String type,
-    required String number,
-    required DateTime date,
-    required String partyName,
-    required double subtotal,
-    required double vat,
-    required double total,
-    required String currency,
-    required String paymentMethod,
-    int? partyId,
-    String? partyVat,
-  }) async {
-    return txn.insert('documents', {
-      'type': type,
-      'number': number,
-      'date': date.toIso8601String(),
-      'party_id': partyId,
-      'party_name': partyName,
-      'party_vat_number': partyVat,
-      'payment_method': paymentMethod,
-      'status': 'approved',
-      'subtotal': subtotal,
-      'vat_total': vat,
-      'total': total,
-      'paid_amount': paymentMethod == 'cash' ? total : 0,
-      'currency_code': currency,
-      'created_at': date.toIso8601String(),
-    });
+  Future<void> _purgeLegacyDemoData(Database db) async {
+    final cleaned = await SindarDatabase.instance.getSetting(
+      'production_cleaned_v1',
+    );
+    if (cleaned == 'true') return;
+
+    final demoSeeded = await SindarDatabase.instance.getSetting(
+      'demo_seeded_v2',
+    );
+    if (demoSeeded == 'true') {
+      await db.transaction((txn) async {
+        const demoNumbers = <String>[
+          'INV-000245',
+          'INV-000244',
+          'QUO-000128',
+          'REC-000067',
+          'PUR-000097',
+          'PUR-000096',
+        ];
+        final placeholders = List.filled(
+          demoNumbers.length,
+          '?',
+        ).join(',');
+
+        await txn.rawDelete(
+          'DELETE FROM journal_lines WHERE entry_id IN ('
+          'SELECT id FROM journal_entries WHERE '
+          "reference_type IN ('demo_cogs','demo_expense') OR "
+          '(reference_id IN (SELECT id FROM documents '
+          'WHERE number IN (' + placeholders + ')) AND '
+          "reference_type IN ('sales_invoice','sales_cogs',"
+          "'purchase_invoice','receipt_voucher')))",
+          demoNumbers,
+        );
+        await txn.rawDelete(
+          'DELETE FROM journal_entries WHERE '
+          "reference_type IN ('demo_cogs','demo_expense') OR "
+          '(reference_id IN (SELECT id FROM documents '
+          'WHERE number IN (' + placeholders + ')) AND '
+          "reference_type IN ('sales_invoice','sales_cogs',"
+          "'purchase_invoice','receipt_voucher'))",
+          demoNumbers,
+        );
+        await txn.rawDelete(
+          'DELETE FROM party_movements WHERE '
+          'document_id IN (SELECT id FROM documents '
+          'WHERE number IN (' + placeholders + ')) OR '
+          'reference IN (' + placeholders + ')',
+          <Object?>[...demoNumbers, ...demoNumbers],
+        );
+        await txn.rawDelete(
+          'DELETE FROM document_lines WHERE document_id IN ('
+          'SELECT id FROM documents WHERE number IN (' +
+              placeholders +
+              '))',
+          demoNumbers,
+        );
+        await txn.rawDelete(
+          'DELETE FROM documents WHERE number IN (' +
+              placeholders +
+              ')',
+          demoNumbers,
+        );
+        await txn.delete(
+          'items',
+          where: 'code = ? AND name = ?',
+          whereArgs: ['ITM-001', 'صنف تجريبي رئيسي'],
+        );
+        await txn.rawDelete(
+          "DELETE FROM parties WHERE name IN (?, ?) "
+          'AND id NOT IN (SELECT party_id FROM documents '
+          'WHERE party_id IS NOT NULL) '
+          'AND id NOT IN (SELECT party_id FROM party_movements)',
+          ['شركة الواجهة الحديثة', 'مؤسسة التوريد الذهبي'],
+        );
+
+        const demoSettings = <String, String>{
+          'company_name_ar': 'مؤسسة سندار التجارية',
+          'company_name_en': 'SINDAR Trading Est.',
+          'company_cr': '1010101010',
+          'seller_vat_number': '310123456700003',
+        };
+        for (final entry in demoSettings.entries) {
+          await txn.delete(
+            'app_settings',
+            where: 'setting_key = ? AND setting_value = ?',
+            whereArgs: [entry.key, entry.value],
+          );
+        }
+
+        final grantRows = await txn.query(
+          'app_settings',
+          columns: ['setting_value'],
+          where: 'setting_key = ?',
+          whereArgs: ['license_grant'],
+          limit: 1,
+        );
+        if (grantRows.isEmpty) {
+          final policyRows = await txn.query(
+            'app_settings',
+            columns: ['setting_value'],
+            where: 'setting_key = ?',
+            whereArgs: ['license_policy'],
+            limit: 1,
+          );
+          if (policyRows.isNotEmpty &&
+              (policyRows.first['setting_value'] as String)
+                  .contains('DEMO-SINDAR')) {
+            await txn.delete(
+              'app_settings',
+              where: 'setting_key = ?',
+              whereArgs: ['license_policy'],
+            );
+          }
+        }
+
+        final documentCount = Sqflite.firstIntValue(
+              await txn.rawQuery('SELECT COUNT(*) FROM documents'),
+            ) ??
+            0;
+        if (documentCount == 0) {
+          await txn.update(
+            'document_sequences',
+            {'next_number': 1},
+          );
+        }
+
+        await txn.delete(
+          'app_settings',
+          where: 'setting_key = ?',
+          whereArgs: ['demo_seeded_v2'],
+        );
+      });
+    }
+
+    await SindarDatabase.instance.saveSetting(
+      'production_cleaned_v1',
+      'true',
+    );
   }
 
   Future<DashboardSnapshot> dashboard({
@@ -430,16 +261,7 @@ class ErpRepository {
   Future<List<ContactChannel>> footerContacts() async {
     final raw = await SindarDatabase.instance.getSetting('footer_contacts');
     if (raw == null || raw.trim().isEmpty) {
-      return const [
-        ContactChannel(
-          type: ContactChannelType.mobile,
-          value: '0500000000',
-        ),
-        ContactChannel(
-          type: ContactChannelType.email,
-          value: 'info@sindar.app',
-        ),
-      ];
+      return const <ContactChannel>[];
     }
     try {
       final decoded = jsonDecode(raw);
@@ -1947,6 +1769,7 @@ class ErpRepository {
       jsonEncode(grant.toJson()),
     );
     await SindarDatabase.instance.saveSetting('license_token', token);
+    await _ensureSystemAdmin(await SindarDatabase.instance.database);
   }
 
   Future<LicenseGrant?> currentLicenseGrant() async {

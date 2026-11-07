@@ -38,7 +38,7 @@ enum CloudSyncSchedule {
 
   static CloudSyncSchedule fromStorage(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return CloudSyncSchedule.automatic;
+      return CloudSyncSchedule.manual;
     }
     return CloudSyncSchedule.values.firstWhere(
       (item) => item.storageValue == value,
@@ -106,6 +106,7 @@ class FreeGoogleDriveSyncService {
   static const String _lastRestoreKey = 'cloud_sync_last_restore_at';
   static const String _lastErrorKey = 'cloud_sync_last_error';
   static const String _lastRemoteIdKey = 'cloud_sync_remote_file_id';
+  static const String _connectedOnceKey = 'cloud_sync_connected_once';
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: const <String>[
@@ -115,6 +116,7 @@ class FreeGoogleDriveSyncService {
 
   Future<GoogleSignInAccount?> connect() async {
     try {
+      await _requiredBackupKeyMaterial();
       final account = _googleSignIn.currentUser ?? await _googleSignIn.signIn();
       if (account == null) {
         return null;
@@ -126,11 +128,22 @@ class FreeGoogleDriveSyncService {
         );
       }
       client.close();
+      await SindarDatabase.instance.saveSetting(
+        _connectedOnceKey,
+        'true',
+      );
+      final storedSchedule = await SindarDatabase.instance.getSetting(
+        _scheduleKey,
+      );
+      if (storedSchedule == null || storedSchedule.trim().isEmpty) {
+        await setSchedule(CloudSyncSchedule.automatic);
+      }
       await _clearLastError();
       return account;
     } catch (error) {
-      await _saveLastError(_friendlyGoogleError(error));
-      rethrow;
+      final friendly = _friendlyGoogleError(error);
+      await _saveLastError(friendly);
+      throw FormatException(friendly);
     }
   }
 
@@ -140,6 +153,11 @@ class FreeGoogleDriveSyncService {
     } on Object {
       await _googleSignIn.signOut();
     }
+    await SindarDatabase.instance.saveSetting(
+      _connectedOnceKey,
+      'false',
+    );
+    await setSchedule(CloudSyncSchedule.manual);
   }
 
   Future<CloudSyncStatus> status({
@@ -155,6 +173,19 @@ class FreeGoogleDriveSyncService {
       await SindarDatabase.instance.getSetting(_lastRestoreKey),
     );
     final lastError = await SindarDatabase.instance.getSetting(_lastErrorKey);
+
+    final connectedOnce = await SindarDatabase.instance.getSetting(
+      _connectedOnceKey,
+    );
+    if (connectedOnce != 'true') {
+      return CloudSyncStatus(
+        connected: false,
+        schedule: schedule,
+        lastBackupAt: lastBackupAt,
+        lastRestoreAt: lastRestoreAt,
+        lastError: lastError?.trim().isEmpty == true ? null : lastError,
+      );
+    }
 
     GoogleSignInAccount? account = _googleSignIn.currentUser;
     try {
@@ -411,15 +442,24 @@ class FreeGoogleDriveSyncService {
     required bool interactiveSignIn,
   }) async {
     GoogleSignInAccount? account = _googleSignIn.currentUser;
-    account ??= await _googleSignIn.signInSilently();
-    if (account == null && interactiveSignIn) {
-      account = await _googleSignIn.signIn();
+    try {
+      account ??= await _googleSignIn.signInSilently();
+      if (account == null && interactiveSignIn) {
+        account = await _googleSignIn.signIn();
+      }
+    } catch (error) {
+      throw FormatException(_friendlyGoogleError(error));
     }
     if (account == null) {
       return null;
     }
 
-    final client = await _googleSignIn.authenticatedClient();
+    dynamic client;
+    try {
+      client = await _googleSignIn.authenticatedClient();
+    } catch (error) {
+      throw FormatException(_friendlyGoogleError(error));
+    }
     if (client == null) {
       if (!interactiveSignIn) return null;
       throw const FormatException(
@@ -674,10 +714,23 @@ class FreeGoogleDriveSyncService {
   static String _friendlyGoogleError(Object error) {
     final text = error.toString();
     if (text.contains('ApiException: 10') ||
-        text.contains('DEVELOPER_ERROR')) {
-      return 'إعداد Google OAuth غير مطابق لحزمة التطبيق أو SHA-1 لشهادة التوقيع.';
+        text.contains('DEVELOPER_ERROR') ||
+        text.contains('sign_in_failed')) {
+      return 'ربط Google مرفوض لأن OAuth غير مطابق لهذه النسخة. '
+          'يجب تسجيل الحزمة com.sindar.sindar_app وSHA-1 لشهادة APK النهائية '
+          'في Google Cloud ثم تفعيل Google Drive API.';
     }
-    return text;
+    if (text.contains('ApiException: 12500') ||
+        text.contains('SIGN_IN_CANCELLED')) {
+      return 'تم إلغاء تسجيل الدخول إلى Google.';
+    }
+    if (text.contains('SocketException') ||
+        text.contains('network_error')) {
+      return 'تعذر الاتصال بخدمات Google. تحقق من الإنترنت ثم أعد المحاولة.';
+    }
+    return text
+        .replaceFirst('FormatException: ', '')
+        .replaceFirst('Exception: ', '');
   }
 }
 
@@ -697,6 +750,14 @@ class CloudSyncScheduler {
 
   static Future<void> restoreRegistration() async {
     await initialize();
+    final token = await SindarDatabase.instance.getSetting('license_token');
+    final connected = await SindarDatabase.instance.getSetting(
+      FreeGoogleDriveSyncService._connectedOnceKey,
+    );
+    if (token == null || token.trim().isEmpty || connected != 'true') {
+      await apply(CloudSyncSchedule.manual);
+      return;
+    }
     final stored = await SindarDatabase.instance.getSetting(
       FreeGoogleDriveSyncService._scheduleKey,
     );
