@@ -108,49 +108,22 @@ class FreeGoogleDriveSyncService {
   static const String _lastRemoteIdKey = 'cloud_sync_remote_file_id';
   static const String _connectedOnceKey = 'cloud_sync_connected_once';
 
-  static const String _webClientIdKey = 'cloud_sync_web_client_id';
+  /// Public Google OAuth Web client identifier for SINDAR Android.
+  /// Shared by every installation; each customer authorizes their own Drive.
+  /// Override at build time only when changing the Google Cloud project.
+  static const String googleOAuthWebClientId = String.fromEnvironment(
+    'SINDAR_GOOGLE_WEB_CLIENT_ID',
+    defaultValue:
+        '626355862977-c96iop9plh9ekjned86pac908u2ash81.apps.googleusercontent.com',
+  );
+
   GoogleSignIn? _googleSignIn;
-  String? _activeWebClientId;
-
-  Future<String?> configuredWebClientId() async {
-    final stored = await SindarDatabase.instance.getSetting(_webClientIdKey);
-    if (stored != null && stored.trim().isNotEmpty) return stored.trim();
-    const bundled = String.fromEnvironment('SINDAR_GOOGLE_WEB_CLIENT_ID');
-    return bundled.trim().isEmpty ? null : bundled.trim();
-  }
-
-  Future<void> saveWebClientId(String raw) async {
-    final id = raw.trim();
-    if (!id.endsWith('.apps.googleusercontent.com') || !id.contains('-') ||
-        id.contains(' ') || id.length < 35) {
-      throw const FormatException('انسخ Web Client ID الصحيح من Google Cloud.');
-    }
-    await SindarDatabase.instance.saveSetting(_webClientIdKey, id);
-    await SindarDatabase.instance.saveSetting(_connectedOnceKey, 'false');
-    await setSchedule(CloudSyncSchedule.manual);
-    try {
-      await _googleSignIn?.signOut();
-    } on Object {
-      // Reconfiguration may occur after an expired Google session.
-    }
-    _googleSignIn = null;
-    _activeWebClientId = null;
-    await _clearLastError();
-  }
 
   Future<GoogleSignIn> _configuredSignIn() async {
-    final id = await configuredWebClientId();
-    if (id == null) {
-      throw const FormatException('أدخل Web Client ID في شاشة مزامنة Google Drive أولاً.');
-    }
-    if (_googleSignIn == null || _activeWebClientId != id) {
-      _googleSignIn = GoogleSignIn(
-        scopes: const <String>[drive.DriveApi.driveAppdataScope],
-        serverClientId: id,
-      );
-      _activeWebClientId = id;
-    }
-    return _googleSignIn!;
+    return _googleSignIn ??= GoogleSignIn(
+      scopes: const <String>[drive.DriveApi.driveAppdataScope],
+      serverClientId: googleOAuthWebClientId,
+    );
   }
 
   Future<GoogleSignInAccount?> connect() async {
