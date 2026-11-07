@@ -136,7 +136,37 @@ class _AdminDashboardState extends State<AdminDashboard> {
         label: const Text('ترخيص جديد'),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                  child: Center(
+                    child: Container(
+                      key: const ValueKey<String>('sindar-official-logo'),
+                      width: 360,
+                      constraints: const BoxConstraints(maxWidth: 360),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: const Color(0x33E5A93C),
+                        ),
+                      ),
+                      child: Image.asset(
+                        'assets/branding/sindar_brand_full.webp',
+                        height: 92,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
+                      ),
+                    ),
+                  ),
+                ),
+                const Expanded(
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ],
+            )
           : RefreshIndicator(
               onRefresh: _refresh,
               child: ListView(
