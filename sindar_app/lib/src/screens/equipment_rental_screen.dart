@@ -270,123 +270,384 @@ class _EquipmentRentalScreenState extends State<EquipmentRentalScreen> {
   List<Map<String, Object?>> _equipment = const [];
   List<Map<String, Object?>> _rentals = const [];
   List<PartyRecord> _customers = const [];
+  List<ItemRecord> _catalog = const [];
   bool _busy = true;
 
+  static const _black = Color(0xFF111318);
+
   @override
-  void initState() { super.initState(); _refresh(); }
+  void initState() {
+    super.initState();
+    _refresh();
+  }
 
   Future<void> _refresh() async {
-    final equipment = await _service.equipment();
-    final rentals = await _service.rentals();
-    final customers = await ErpRepository.instance.listParties('customer');
-    if (!mounted) return;
-    setState(() { _equipment = equipment; _rentals = rentals; _customers = customers; _busy = false; });
+    try {
+      await const RentalAccrualService().accrue();
+      final equipment = await _service.equipment();
+      final rentals = await _service.rentals();
+      final customers = await ErpRepository.instance.listParties('customer');
+      final items = await ErpRepository.instance.listItems();
+      if (!mounted) return;
+      setState(() {
+        _equipment = equipment;
+        _rentals = rentals;
+        _customers = customers;
+        _catalog = items;
+        _busy = false;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _busy = false);
+      _error(error);
+    }
   }
 
   Future<bool> _authorize(String action) async {
     final allowed = await SessionController.instance.can('assets', action: action);
     if (!allowed && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ليس لديك صلاحية تنفيذ العملية')),
-      );
+      _error('ليس لديك صلاحية تنفيذ العملية');
     }
     return allowed;
   }
 
+  static double _rate(Map<String, Object?> equipment, RentalPeriod period) {
+    final field = switch (period) {
+      RentalPeriod.hour => 'hourly_rate',
+      RentalPeriod.day => 'daily_rate',
+      RentalPeriod.week => 'weekly_rate',
+      RentalPeriod.month => 'monthly_rate',
+      RentalPeriod.year => 'yearly_rate',
+    };
+    return (equipment[field] as num?)?.toDouble() ?? 0;
+  }
+
+  static String _money(Object? value) =>
+      ((value as num?)?.toDouble() ?? 0).toStringAsFixed(2);
+
+  static String _dateTime(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')} '
+      '${date.hour.toString().padLeft(2, '0')}:'
+      '${date.minute.toString().padLeft(2, '0')}';
+
   Future<void> _add() async {
-    if (!await _authorize('add')) return;
-    if (!mounted) return;
+    if (!await _authorize('add') || !mounted) return;
     final code = TextEditingController();
     final name = TextEditingController();
     final serial = TextEditingController();
-    final daily = TextEditingController(text: '0');
+    final purchase = TextEditingController(text: '0');
     final sale = TextEditingController(text: '0');
+    final hourly = TextEditingController(text: '0');
+    final daily = TextEditingController(text: '0');
+    final weekly = TextEditingController(text: '0');
+    final monthly = TextEditingController(text: '0');
+    final yearly = TextEditingController(text: '0');
+    final all = [code, name, serial, purchase, sale, hourly, daily, weekly,
+      monthly, yearly];
+    int? catalogItemId;
     try {
-      final accepted = await showDialog<bool>(context: context, builder: (context) =>
-        AlertDialog(title: const Text('إضافة معدة'), content: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(controller: code, decoration: const InputDecoration(labelText: 'رمز المعدة')),
-            TextField(controller: name, decoration: const InputDecoration(labelText: 'اسم المعدة')),
-            TextField(controller: serial, decoration: const InputDecoration(labelText: 'الرقم التسلسلي')),
-            TextField(controller: daily, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'إيجار اليوم')),
-            TextField(controller: sale, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'سعر البيع')),
-          ])),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('حفظ')),
-          ]));
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, update) => AlertDialog(
+            title: const Text('تسجيل معدة للتأجير'),
+            content: SizedBox(
+              width: 460,
+              child: SingleChildScrollView(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  if (_catalog.isNotEmpty)
+                    DropdownButtonFormField<int>(
+                      isExpanded: true,
+                      initialValue: catalogItemId,
+                      decoration: const InputDecoration(
+                        labelText: 'ربط بصنف موجود (مرجعي واختياري)',
+                      ),
+                      items: [for (final item in _catalog)
+                        DropdownMenuItem(
+                          value: item.id,
+                          child: Text('${item.name} | شراء ${item.purchasePrice} | بيع ${item.salePrice}',
+                            overflow: TextOverflow.ellipsis),
+                        )],
+                      onChanged: (id) {
+                        final item = _catalog.where((e) => e.id == id).firstOrNull;
+                        update(() {
+                          catalogItemId = id;
+                          if (item != null) {
+                            code.text = item.code;
+                            name.text = item.name;
+                            purchase.text = item.purchasePrice.toStringAsFixed(2);
+                            sale.text = item.salePrice.toStringAsFixed(2);
+                          }
+                        });
+                      },
+                    ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text('ربط الصنف يستورد الاسم وسعر الشراء والبيع فقط. '
+                        'لا يخصم من المخزون ولا يثبت شراء أصل محاسبياً.',
+                      style: TextStyle(fontSize: 12)),
+                  ),
+                  TextField(controller: code, decoration: const InputDecoration(labelText: 'رمز المعدة')),
+                  const SizedBox(height: 8),
+                  TextField(controller: name, decoration: const InputDecoration(labelText: 'اسم المعدة')),
+                  const SizedBox(height: 8),
+                  TextField(controller: serial, decoration: const InputDecoration(labelText: 'الرقم التسلسلي')),
+                  const SizedBox(height: 8),
+                  TextField(controller: purchase, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'تكلفة الشراء (مرجعية)')),
+                  const SizedBox(height: 8),
+                  TextField(controller: sale, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'سعر البيع (مرجعي)')),
+                  const SizedBox(height: 8),
+                  TextField(controller: hourly, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'إيجار الساعة')),
+                  const SizedBox(height: 8),
+                  TextField(controller: daily, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'إيجار اليوم')),
+                  const SizedBox(height: 8),
+                  TextField(controller: weekly, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'إيجار الأسبوع')),
+                  const SizedBox(height: 8),
+                  TextField(controller: monthly, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'إيجار الشهر')),
+                  const SizedBox(height: 8),
+                  TextField(controller: yearly, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'إيجار السنة')),
+                ]),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء')),
+              FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('حفظ')),
+            ],
+          ),
+        ),
+      );
       if (accepted != true) return;
-      await _service.addEquipment(code: code.text, name: name.text,
-        serial: serial.text, dailyRate: double.parse(daily.text),
-        salePrice: double.parse(sale.text));
+      double value(TextEditingController c) {
+        final parsed = double.tryParse(c.text.trim());
+        if (parsed == null) throw const FormatException('تأكد من كتابة الأسعار بالأرقام الصحيحة');
+        return parsed;
+      }
+      await _service.addEquipment(
+        code: code.text, name: name.text, serial: serial.text,
+        purchasePrice: value(purchase), salePrice: value(sale),
+        hourlyRate: value(hourly), dailyRate: value(daily),
+        weeklyRate: value(weekly), monthlyRate: value(monthly),
+        yearlyRate: value(yearly), catalogItemId: catalogItemId,
+      );
       await _refresh();
-    } catch (error) { _error(error); }
-    finally { code.dispose(); name.dispose(); serial.dispose(); daily.dispose(); sale.dispose(); }
+    } catch (error) {
+      _error(error);
+    } finally {
+      for (final c in all) { c.dispose(); }
+    }
   }
 
-  Future<void> _operate(Map<String, Object?> equipment, {required bool sale}) async {
-    if (!await _authorize('approve')) return;
-    if (!mounted) return;
+  Future<void> _rentEquipment(Map<String, Object?> equipment) async {
+    if (!await _authorize('approve') || !mounted) return;
     if (_customers.isEmpty) {
       _error('أضف عميلاً أولاً من قسم العملاء');
       return;
     }
     int? customerId;
     DateTime start = DateTime.now();
-    DateTime due = DateTime.now();
-    final action = await showDialog<bool>(context: context, builder: (context) =>
-      StatefulBuilder(builder: (context, update) => AlertDialog(
-        title: Text(sale ? 'بيع ${equipment['name']}' : 'تأجير ${equipment['name']}'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          DropdownButtonFormField<int>(
-            isExpanded: true, decoration: const InputDecoration(labelText: 'العميل'),
-            items: [for (final customer in _customers)
-              DropdownMenuItem(value: customer.id, child: Text(customer.name))],
-            onChanged: (value) => update(() => customerId = value)),
-          if (!sale) ...[
-            ListTile(title: const Text('بداية التأجير'), subtitle: Text('${start.year}-${start.month}-${start.day}'),
-              onTap: () async { final date = await showDatePicker(context: context,
-                initialDate: start, firstDate: DateTime(2020), lastDate: DateTime(2100));
-                if (date != null) update(() => start = date); }),
-            ListTile(title: const Text('موعد الإرجاع'), subtitle: Text('${due.year}-${due.month}-${due.day}'),
-              onTap: () async { final date = await showDatePicker(context: context,
-                initialDate: due, firstDate: DateTime(2020), lastDate: DateTime(2100));
-                if (date != null) update(() => due = date); }),
-          ],
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
-          FilledButton(onPressed: customerId == null ? null : () => Navigator.pop(context, true),
-            child: Text(sale ? 'اعتماد البيع الآجل' : 'حفظ عقد التأجير')),
-        ],
-      )));
-    if (action != true || customerId == null) return;
+    RentalPeriod period = RentalPeriod.day;
+    final quantity = TextEditingController(text: '1');
     try {
-      final id = sale
-          ? await _service.sell(equipmentId: equipment['id'] as int, customerId: customerId!)
-          : await _service.rent(equipmentId: equipment['id'] as int,
-              customerId: customerId!, start: start, due: due);
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, update) {
+            final count = int.tryParse(quantity.text.trim());
+            RentalQuote? quote;
+            try {
+              if (count != null) quote = RentalQuote.create(
+                period: period, quantity: count,
+                unitRate: _rate(equipment, period), start: start);
+            } on FormatException { /* Invalid period, show validation below. */ }
+            return AlertDialog(
+              title: Text('عقد تأجير • ${equipment['name']}'),
+              content: SizedBox(
+                width: 450,
+                child: SingleChildScrollView(child: Column(
+                  mainAxisSize: MainAxisSize.min, children: [
+                    DropdownButtonFormField<int>(
+                      isExpanded: true,
+                      initialValue: customerId,
+                      decoration: const InputDecoration(labelText: 'اسم العميل'),
+                      items: [for (final c in _customers)
+                        DropdownMenuItem(value: c.id, child: Text(c.name))],
+                      onChanged: (v) => update(() => customerId = v),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<RentalPeriod>(
+                      initialValue: period,
+                      decoration: const InputDecoration(labelText: 'وحدة التأجير'),
+                      items: [for (final unit in RentalPeriod.values)
+                        DropdownMenuItem(value: unit, child: Text('بال${unit.label}'))],
+                      onChanged: (v) { if (v != null) update(() => period = v); },
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: quantity,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'عدد الساعات / الأيام / المدد'),
+                      onChanged: (_) => update(() {}),
+                    ),
+                    const SizedBox(height: 10),
+                    ListTile(
+                      leading: const Icon(Icons.schedule),
+                      title: const Text('بداية التأجير'),
+                      subtitle: Text(_dateTime(start)),
+                      onTap: () async {
+                        final date = await showDatePicker(
+                          context: dialogContext, initialDate: start,
+                          firstDate: DateTime(2020), lastDate: DateTime(2100));
+                        if (date == null || !dialogContext.mounted) return;
+                        final time = await showTimePicker(
+                          context: dialogContext, initialTime: TimeOfDay.fromDateTime(start));
+                        if (time == null) return;
+                        update(() => start = DateTime(date.year, date.month, date.day,
+                          time.hour, time.minute));
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    if (quote == null)
+                      const Text('حدد سعر الوحدة ومدتها أولاً',
+                        style: TextStyle(color: Colors.red))
+                    else
+                      Card(child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('سعر الوحدة: ${quote.unitRate.toStringAsFixed(2)}'),
+                          Text('موعد الإرجاع: ${_dateTime(quote.due.toLocal())}'),
+                          Text('إجمالي العقد: ${quote.total.toStringAsFixed(2)}',
+                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                        ]),
+                      )),
+                  ]),
+                )),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('إلغاء')),
+                FilledButton(
+                  onPressed: customerId == null || quote == null
+                      ? null : () => Navigator.pop(dialogContext, true),
+                  child: const Text('اعتماد عقد التأجير'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+      if (accepted != true || customerId == null) return;
+      final id = await _service.rent(
+        equipmentId: equipment['id'] as int, customerId: customerId!,
+        start: start, period: period, quantity: int.parse(quantity.text.trim()),
+      );
       await _refresh();
-      if (!mounted) return;
-      await Navigator.push(context, MaterialPageRoute<void>(
-        builder: (_) => SavedDocumentPreviewScreen(documentId: id)));
-    } catch (error) { _error(error); }
+      if (mounted) {
+        await Navigator.push(context,
+          MaterialPageRoute<void>(builder: (_) => SavedDocumentPreviewScreen(documentId: id)));
+      }
+    } catch (error) {
+      _error(error);
+    } finally {
+      quantity.dispose();
+    }
+  }
+
+  Future<void> _receipt(Map<String, Object?> rental) async {
+    if (!await _authorize('approve') || !mounted) return;
+    final outstanding = (rental['total'] as num).toDouble() -
+        (rental['paid_amount'] as num).toDouble();
+    if (outstanding <= 0.005) return;
+    final amount = TextEditingController(text: outstanding.toStringAsFixed(2));
+    String settlement = '1101';
+    try {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, update) => AlertDialog(
+            title: Text('سند قبض • ${rental['number']}'),
+            content: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('العميل: ${rental['customer_name']}'),
+              Text('المتبقي: ${outstanding.toStringAsFixed(2)}'),
+              const SizedBox(height: 12),
+              TextField(controller: amount,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'المبلغ المقبوض')),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: settlement,
+                decoration: const InputDecoration(labelText: 'حساب القبض'),
+                items: const [
+                  DropdownMenuItem(value: '1101', child: Text('الصندوق - نقداً')),
+                  DropdownMenuItem(value: '1102', child: Text('الحساب البنكي')),
+                ],
+                onChanged: (v) { if (v != null) update(() => settlement = v); },
+              ),
+            ]),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء')),
+              FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('حفظ سند القبض')),
+            ],
+          ),
+        ),
+      );
+      if (accepted != true) return;
+      final number = double.tryParse(amount.text.trim());
+      if (number == null || number <= 0 || number > outstanding + 0.005) {
+        throw const FormatException('قيمة القبض غير صحيحة أو تتجاوز المتبقي');
+      }
+      final id = await ErpRepository.instance.createVoucher(
+        receipt: true, amount: number,
+        partyId: rental['customer_id'] as int,
+        partyName: rental['customer_name'] as String?,
+        linkedDocumentId: rental['document_id'] as int,
+        settlementAccountCode: settlement,
+        notes: 'قبض إيجار عن العقد ${rental['number']}',
+      );
+      await _refresh();
+      if (mounted) {
+        await Navigator.push(context,
+          MaterialPageRoute<void>(builder: (_) => SavedDocumentPreviewScreen(documentId: id)));
+      }
+    } catch (error) {
+      _error(error);
+    } finally {
+      amount.dispose();
+    }
   }
 
   Future<void> _returnEquipment(Map<String, Object?> rental) async {
-    if (!await _authorize('edit')) return;
-    if (!mounted) return;
-    final confirmed = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
-      title: const Text('تأكيد استرجاع المعدة'),
-      content: Text('هل تم استلام ${rental['equipment_name']} من العميل فعلاً؟'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
-        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('تم الاستلام')),
-      ],
-    ));
-    if (confirmed != true) return;
-    try { await _service.markReturned(rental['id'] as int); await _refresh(); }
-    catch (error) { _error(error); }
+    if (!await _authorize('edit') || !mounted) return;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تأكيد استلام المعدة'),
+        content: const Text(
+          'سيتم تحرير المعدة لتأجير جديد. الإرجاع المبكر لا يلغي '
+          'المبلغ المستحق ولا ينشئ استرداداً تلقائياً.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('تأكيد الاستلام')),
+        ],
+      ),
+    );
+    if (accepted != true) return;
+    try {
+      await _service.markReturned(rental['id'] as int);
+      await _refresh();
+    } catch (error) { _error(error); }
   }
 
   void _error(Object error) {
@@ -397,53 +658,144 @@ class _EquipmentRentalScreenState extends State<EquipmentRentalScreen> {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now().toUtc();
-    return Scaffold(
-      appBar: AppBar(title: const Text('بيع وتأجير المعدات'),
+    final available = _equipment.where((e) => e['status'] == 'available').length;
+    final active = _rentals.where((r) => r['status'] == 'active').length;
+    final outstanding = _rentals.fold<double>(0, (sum, r) =>
+      sum + (r['total'] as num).toDouble() - (r['paid_amount'] as num).toDouble());
+    final outer = Theme.of(context);
+    final theme = outer.copyWith(
+      colorScheme: outer.colorScheme.copyWith(
+        primary: _black, secondary: AppColors.gold),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: _black, foregroundColor: AppColors.gold),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: AppColors.gold, foregroundColor: _black),
+    );
+    return Theme(data: theme, child: Scaffold(
+      appBar: AppBar(title: const Text('سِندار | قسم تأجير المعدات'),
         actions: [IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh))]),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _add, icon: const Icon(Icons.add), label: const Text('إضافة معدة')),
+        onPressed: _add, icon: const Icon(Icons.add),
+        label: const Text('إضافة معدة')),
       body: _busy
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(padding: const EdgeInsets.all(12), children: [
-              Text('المعدات (${_equipment.length})', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              if (_equipment.isEmpty) const Card(child: ListTile(title: Text('لا توجد معدات بعد'))),
-              for (final equipment in _equipment)
-                Card(child: ListTile(
-                  leading: const Icon(Icons.handyman_outlined),
-                  title: Text('${equipment['name']} • ${equipment['code']}'),
-                  subtitle: Text('الحالة: ${switch (equipment['status']) {
-                    'available' => 'متاحة', 'rented' => 'مؤجرة', 'maintenance' => 'صيانة',
-                    'sold' => 'مباعة', _ => equipment['status'],
-                  }} | يومي: ${equipment['daily_rate']} | بيع: ${equipment['sale_price']}'),
-                  trailing: equipment['status'] == 'available'
-                      ? Wrap(spacing: 4, children: [
-                          OutlinedButton(onPressed: () => _operate(equipment, sale: false),
-                            child: const Text('تأجير')),
-                          FilledButton.tonal(onPressed: () => _operate(equipment, sale: true),
-                            child: const Text('بيع')),
-                        ])
-                      : null,
-                )),
-              const SizedBox(height: 22),
-              Text('عقود التأجير (${_rentals.length})', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              if (_rentals.isEmpty) const Card(child: ListTile(title: Text('لا توجد عقود بعد'))),
-              for (final rental in _rentals)
-                Card(child: ListTile(
-                  leading: const Icon(Icons.description_outlined),
-                  title: Text('${rental['number']} • ${rental['equipment_name']}'),
-                  subtitle: Text('${rental['customer_name']} | ${rental['total']} | '
-                    '${rental['status'] == 'returned' ? 'تم الإرجاع' :
-                      DateTime.parse(rental['due_at'] as String).isBefore(now) ? 'متأخرة' : 'مؤجرة'}'),
-                  onTap: () => Navigator.push(context, MaterialPageRoute<void>(
-                    builder: (_) => SavedDocumentPreviewScreen(documentId: rental['document_id'] as int))),
-                  trailing: rental['status'] == 'active'
-                      ? TextButton(onPressed: () => _returnEquipment(rental), child: const Text('استرجاع'))
-                      : const Icon(Icons.check_circle_outline),
-                )),
-              const SizedBox(height: 90),
+        ? const Center(child: CircularProgressIndicator())
+        : ListView(padding: const EdgeInsets.all(14), children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(color: _black,
+                borderRadius: BorderRadius.circular(22)),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(Icons.construction_rounded, size: 36, color: AppColors.gold),
+                  SizedBox(height: 8),
+                  Text('إدارة المعدات والتأجير',
+                    style: TextStyle(color: AppColors.gold, fontSize: 22,
+                      fontWeight: FontWeight.bold)),
+                  SizedBox(height: 6),
+                  Text('هوية مستقلة • عقود بالمدة • قبض مرتبط • حسابات تأجير منفصلة',
+                    style: TextStyle(color: Colors.white70)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              Chip(avatar: const Icon(Icons.handyman, size: 18),
+                label: Text('المعدات ${_equipment.length}')),
+              Chip(avatar: const Icon(Icons.check_circle_outline, size: 18),
+                label: Text('المتاحة $available')),
+              Chip(avatar: const Icon(Icons.schedule, size: 18),
+                label: Text('العقود النشطة $active')),
+              Chip(avatar: const Icon(Icons.payments_outlined, size: 18),
+                label: Text('المتبقي ${outstanding.toStringAsFixed(2)}')),
             ]),
-    );
+            const SizedBox(height: 15),
+            Text('سجل المعدات', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            if (_equipment.isEmpty)
+              const Card(child: ListTile(title: Text('لم تتم إضافة معدات بعد'))),
+            for (final equipment in _equipment)
+              Card(child: Padding(
+                padding: const EdgeInsets.all(7),
+                child: Column(children: [
+                  ListTile(
+                    leading: const CircleAvatar(backgroundColor: AppColors.gold,
+                      child: Icon(Icons.handyman, color: _black)),
+                    title: Text('${equipment['name']} | ${equipment['code']}'),
+                    subtitle: Text('الحالة: ${switch (equipment['status']) {
+                      'available' => 'متاحة', 'rented' => 'مؤجرة',
+                      'maintenance' => 'صيانة', 'sold' => 'مباعة',
+                      _ => equipment['status'],
+                    }} | تكلفة: ${_money(equipment['purchase_price'])} | '
+                    'بيع مرجعي: ${_money(equipment['sale_price'])}'),
+                  ),
+                  Padding(padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text('ساعة ${_money(equipment['hourly_rate'])} | '
+                      'يوم ${_money(equipment['daily_rate'])} | '
+                      'أسبوع ${_money(equipment['weekly_rate'])} | '
+                      'شهر ${_money(equipment['monthly_rate'])} | '
+                      'سنة ${_money(equipment['yearly_rate'])}')),
+                  if (equipment['status'] == 'available')
+                    Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+                      onPressed: () => _rentEquipment(equipment),
+                      icon: const Icon(Icons.assignment_add),
+                      label: const Text('تأجير هذه المعدة'),
+                    )),
+                ]),
+              )),
+            const SizedBox(height: 18),
+            Text('عقود التأجير', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            if (_rentals.isEmpty)
+              const Card(child: ListTile(title: Text('لا توجد عقود محفوظة'))),
+            for (final rental in _rentals)
+              Card(child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Column(children: [
+                  ListTile(
+                    leading: const Icon(Icons.description_outlined),
+                    title: Text('${rental['number']} • ${rental['equipment_name']}'),
+                    subtitle: Text('${rental['customer_name']} | '
+                      '${rental['billing_quantity']} × ${rental['billing_unit']} | '
+                      'الإجمالي ${_money(rental['total'])}\n'
+                      'مقبوض ${_money(rental['paid_amount'])} | '
+                      '${rental['status'] == 'returned' ? 'تم الاستلام' :
+                        DateTime.parse(rental['due_at'] as String).isBefore(now)
+                        ? 'متأخرة' : 'مؤجرة'}'),
+                    isThreeLine: true,
+                    onTap: () => Navigator.push(context,
+                      MaterialPageRoute<void>(builder: (_) =>
+                        SavedDocumentPreviewScreen(
+                          documentId: rental['document_id'] as int))),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Wrap(spacing: 8, children: [
+                      if ((rental['total'] as num).toDouble() -
+                            (rental['paid_amount'] as num).toDouble() > 0.005)
+                        FilledButton.icon(
+                          onPressed: () => _receipt(rental),
+                          icon: const Icon(Icons.payments_outlined),
+                          label: const Text('سند قبض'),
+                        ),
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.push(context,
+                          MaterialPageRoute<void>(builder: (_) =>
+                            SavedDocumentPreviewScreen(
+                              documentId: rental['document_id'] as int))),
+                        icon: const Icon(Icons.visibility_outlined),
+                        label: const Text('عرض العقد'),
+                      ),
+                      if (rental['status'] == 'active')
+                        OutlinedButton(
+                          onPressed: () => _returnEquipment(rental),
+                          child: const Text('استلام المعدة'),
+                        ),
+                    ]),
+                  ),
+                ]),
+              )),
+            const SizedBox(height: 90),
+          ]),
+    ));
   }
 }
