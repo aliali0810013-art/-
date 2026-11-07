@@ -70,6 +70,36 @@ class EquipmentRentalService {
     });
   }
 
+  /// Changing a rate affects only future contracts; active leases store
+  /// the historical unit rate at issuance.
+  Future<void> updateEquipmentRates({
+    required int id,
+    required double hourlyRate,
+    required double dailyRate,
+    required double weeklyRate,
+    required double monthlyRate,
+    required double yearlyRate,
+    required double purchasePrice,
+    required double salePrice,
+  }) async {
+    final values = [hourlyRate, dailyRate, weeklyRate, monthlyRate,
+      yearlyRate, purchasePrice, salePrice];
+    if (values.any((rate) => !rate.isFinite || rate < 0)) {
+      throw const FormatException('يجب أن تكون أسعار المعدات غير سالبة');
+    }
+    final db = await SindarDatabase.instance.database;
+    final updated = await db.update('rental_equipment', {
+      'hourly_rate': hourlyRate,
+      'daily_rate': dailyRate,
+      'weekly_rate': weeklyRate,
+      'monthly_rate': monthlyRate,
+      'yearly_rate': yearlyRate,
+      'purchase_price': purchasePrice,
+      'sale_price': salePrice,
+    }, where: 'id=?', whereArgs: [id]);
+    if (updated != 1) throw const FormatException('المعدة غير موجودة');
+  }
+
   Future<int> rent({
     required int equipmentId,
     required int customerId,
@@ -446,6 +476,74 @@ class _EquipmentRentalScreenState extends State<EquipmentRentalScreen> {
     }
   }
 
+  Future<void> _editEquipment(Map<String, Object?> equipment) async {
+    if (!await _authorize('edit') || !mounted) return;
+    final fields = <String, TextEditingController>{
+      'purchase_price': TextEditingController(text: _money(equipment['purchase_price'])),
+      'sale_price': TextEditingController(text: _money(equipment['sale_price'])),
+      'hourly_rate': TextEditingController(text: _money(equipment['hourly_rate'])),
+      'daily_rate': TextEditingController(text: _money(equipment['daily_rate'])),
+      'weekly_rate': TextEditingController(text: _money(equipment['weekly_rate'])),
+      'monthly_rate': TextEditingController(text: _money(equipment['monthly_rate'])),
+      'yearly_rate': TextEditingController(text: _money(equipment['yearly_rate'])),
+    };
+    const labels = <String, String>{
+      'purchase_price': 'تكلفة الشراء المرجعية',
+      'sale_price': 'سعر البيع المرجعي',
+      'hourly_rate': 'إيجار الساعة',
+      'daily_rate': 'إيجار اليوم',
+      'weekly_rate': 'إيجار الأسبوع',
+      'monthly_rate': 'إيجار الشهر',
+      'yearly_rate': 'إيجار السنة',
+    };
+    try {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('تعديل أسعار ${equipment['name']}'),
+          content: SizedBox(width: 440, child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              for (final field in fields.entries) ...[
+                TextField(
+                  controller: field.value,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(labelText: labels[field.key]),
+                ),
+                const SizedBox(height: 8),
+              ],
+              const Text('تغيير الأسعار لا يعدل عقود الإيجار السابقة أو '
+                'الفواتير المحفوظة، ولا يثبت شراء أصل محاسبياً.'),
+            ]),
+          )),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('حفظ الأسعار')),
+          ],
+        ),
+      );
+      if (accepted != true) return;
+      double rate(String key) {
+        final value = double.tryParse(fields[key]!.text.trim());
+        if (value == null) throw const FormatException('أدخل أسعاراً رقمية صحيحة');
+        return value;
+      }
+      await _service.updateEquipmentRates(
+        id: equipment['id'] as int,
+        purchasePrice: rate('purchase_price'), salePrice: rate('sale_price'),
+        hourlyRate: rate('hourly_rate'), dailyRate: rate('daily_rate'),
+        weeklyRate: rate('weekly_rate'), monthlyRate: rate('monthly_rate'),
+        yearlyRate: rate('yearly_rate'),
+      );
+      await _refresh();
+    } catch (error) {
+      _error(error);
+    } finally {
+      for (final c in fields.values) { c.dispose(); }
+    }
+  }
+
   Future<void> _rentEquipment(Map<String, Object?> equipment) async {
     if (!await _authorize('approve') || !mounted) return;
     if (_customers.isEmpty) {
@@ -736,12 +834,17 @@ class _EquipmentRentalScreenState extends State<EquipmentRentalScreen> {
                       'أسبوع ${_money(equipment['weekly_rate'])} | '
                       'شهر ${_money(equipment['monthly_rate'])} | '
                       'سنة ${_money(equipment['yearly_rate'])}')),
-                  if (equipment['status'] == 'available')
-                    Align(alignment: Alignment.centerLeft, child: TextButton.icon(
-                      onPressed: () => _rentEquipment(equipment),
-                      icon: const Icon(Icons.assignment_add),
-                      label: const Text('تأجير هذه المعدة'),
-                    )),
+                  Wrap(spacing: 8, alignment: WrapAlignment.end, children: [
+                    TextButton.icon(
+                      onPressed: () => _editEquipment(equipment),
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('تعديل الأسعار')),
+                    if (equipment['status'] == 'available')
+                      TextButton.icon(
+                        onPressed: () => _rentEquipment(equipment),
+                        icon: const Icon(Icons.assignment_add),
+                        label: const Text('تأجير هذه المعدة')),
+                  ]),
                 ]),
               )),
             const SizedBox(height: 18),
