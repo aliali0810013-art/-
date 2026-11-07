@@ -74,6 +74,56 @@ jobs:
           path.write_text(text)
           PY
 
+      - name: Configure stable Android release signing
+        if: matrix.app == 'sindar_app'
+        working-directory: ${{ matrix.app }}
+        env:
+          SINDAR_KEYSTORE_BASE64: ${{ secrets.SINDAR_KEYSTORE_BASE64 }}
+          SINDAR_KEYSTORE_PASSWORD: ${{ secrets.SINDAR_KEYSTORE_PASSWORD }}
+          SINDAR_KEY_ALIAS: ${{ secrets.SINDAR_KEY_ALIAS }}
+          SINDAR_KEY_PASSWORD: ${{ secrets.SINDAR_KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          names = ("SINDAR_KEYSTORE_BASE64", "SINDAR_KEYSTORE_PASSWORD",
+                   "SINDAR_KEY_ALIAS", "SINDAR_KEY_PASSWORD")
+          present = [bool(os.environ.get(name)) for name in names]
+          if not any(present):
+              print("::warning::No stable signing secrets configured; this APK uses the generated development signature. Do not register its SHA-1 for production.")
+          elif not all(present):
+              raise SystemExit("Incomplete Android signing secrets. Configure all four SINDAR_* secrets.")
+          else:
+              destination = Path("android/app/release-keystore.jks")
+              destination.write_bytes(base64.b64decode(os.environ["SINDAR_KEYSTORE_BASE64"], validate=True))
+              gradle = Path("android/app/build.gradle.kts")
+              if not gradle.exists():
+                  raise SystemExit("Expected Flutter Kotlin Gradle file is missing; verify signing configuration.")
+              source = gradle.read_text()
+              original = 'signingConfig = signingConfigs.getByName("debug")'
+              if source.count(original) != 1:
+                  raise SystemExit("Cannot find exactly one generated release signingConfig statement.")
+              block = """
+                  signingConfigs {
+                      create("release") {
+                          storeFile = file("release-keystore.jks")
+                          storePassword = System.getenv("SINDAR_KEYSTORE_PASSWORD")
+                          keyAlias = System.getenv("SINDAR_KEY_ALIAS")
+                          keyPassword = System.getenv("SINDAR_KEY_PASSWORD")
+                      }
+                  }
+
+              """
+              if source.count("    buildTypes {") != 1:
+                  raise SystemExit("Cannot find Flutter buildTypes section.")
+              source = source.replace("    buildTypes {", block + "    buildTypes {", 1)
+              source = source.replace(original, 'signingConfig = signingConfigs.getByName("release")', 1)
+              gradle.write_text(source)
+              print("Configured stable signing from GitHub Actions secrets")
+          PY
+
       - name: Resolve dependencies
         working-directory: ${{ matrix.app }}
         run: flutter pub get
