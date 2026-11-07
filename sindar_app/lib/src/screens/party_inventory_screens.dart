@@ -440,6 +440,60 @@ class _InventoryScreenState extends State<InventoryScreen> {
     reorder.dispose();
   }
 
+  Future<void> _editPrices(ItemRecord item) async {
+    if (!await SessionController.instance.can('inventory', action: 'edit')) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ليس لديك صلاحية تعديل الأصناف')));
+      return;
+    }
+    if (!mounted) return;
+    final purchase = TextEditingController(
+      text: item.purchasePrice.toStringAsFixed(2));
+    final sale = TextEditingController(
+      text: item.salePrice.toStringAsFixed(2));
+    try {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('تعديل أسعار ${item.name}'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: purchase,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'سعر الشراء للصنف')),
+            const SizedBox(height: 12),
+            TextField(controller: sale,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'سعر البيع للصنف')),
+            const SizedBox(height: 12),
+            const Text('التعديل يطبق على الفواتير الجديدة فقط، '
+              'ولا يغير أسعار المستندات المحفوظة.'),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('حفظ الأسعار')),
+          ],
+        ),
+      );
+      if (accepted != true) return;
+      final p = double.tryParse(purchase.text.trim());
+      final s = double.tryParse(sale.text.trim());
+      if (p == null || s == null) {
+        throw const FormatException('تأكد من إدخال الأسعار بشكل صحيح');
+      }
+      await ErpRepository.instance.updateItemPrices(
+        itemId: item.id, purchasePrice: p, salePrice: s);
+      await _refresh();
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر تعديل السعر: $error')));
+    } finally {
+      purchase.dispose();
+      sale.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -480,16 +534,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     ),
                     title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w800)),
                     subtitle: Text(
-                      'الكود: ' +
-                          item.code +
-                          ' • الكمية: ' +
-                          item.quantity.toStringAsFixed(2) +
-                          ' • بيع: ' +
-                          item.salePrice.toStringAsFixed(2),
+                      'الكود: ' + item.code +
+                      ' • الكمية: ' + item.quantity.toStringAsFixed(2) +
+                      ' • شراء: ' + item.purchasePrice.toStringAsFixed(2) +
+                      ' • بيع: ' + item.salePrice.toStringAsFixed(2),
                     ),
-                    trailing: low
-                        ? const Chip(label: Text('إعادة طلب'))
-                        : Text(item.barcode ?? ''),
+                    trailing: const Icon(Icons.edit_outlined),
+                    onTap: () => _editPrices(item),
                   ),
                 );
               },

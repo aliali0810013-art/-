@@ -609,6 +609,24 @@ class ErpRepository {
     });
   }
 
+  /// Price-list changes affect future documents; already-posted invoices
+  /// keep their immutable historical transaction prices.
+  Future<void> updateItemPrices({
+    required int itemId,
+    required double purchasePrice,
+    required double salePrice,
+  }) async {
+    if (!purchasePrice.isFinite || purchasePrice < 0 ||
+        !salePrice.isFinite || salePrice < 0) {
+      throw const FormatException('سعر البيع والشراء يجب أن يكونا غير سالبين');
+    }
+    final db = await SindarDatabase.instance.database;
+    final changed = await db.update('items',
+      {'purchase_price': purchasePrice, 'sale_price': salePrice},
+      where: 'id = ?', whereArgs: [itemId]);
+    if (changed != 1) throw const FormatException('الصنف غير موجود');
+  }
+
   Future<int> createSalesInvoice({
     required List<InvoiceLineInput> lines,
     required bool onCredit,
