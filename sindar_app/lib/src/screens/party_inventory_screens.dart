@@ -486,8 +486,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
         itemId: item.id, purchasePrice: p, salePrice: s);
       await _refresh();
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تعذر تعديل السعر: $error')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تعديل السعر: $error')));
+      }
     } finally {
       purchase.dispose();
       sale.dispose();

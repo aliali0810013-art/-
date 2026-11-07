@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite/sqflite.dart' show Sqflite;
 
 import 'package:sindar_app/src/data/local/sindar_database.dart';
 import 'package:sindar_app/src/screens/equipment_rental_screen.dart';
