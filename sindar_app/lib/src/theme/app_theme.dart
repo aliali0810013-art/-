@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 abstract final class AppColors {
   static const navy = Color(0xFF0A2540);
@@ -36,7 +35,7 @@ abstract final class AppTheme {
       scaffoldBackgroundColor: AppColors.background,
     );
     return base.copyWith(
-      textTheme: GoogleFonts.cairoTextTheme(base.textTheme).apply(
+      textTheme: base.textTheme.apply(
         bodyColor: AppColors.text,
         displayColor: AppColors.text,
       ),

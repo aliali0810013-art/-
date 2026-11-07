@@ -2,7 +2,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import 'license_store.dart';
@@ -23,7 +22,7 @@ class SindarAdminApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF4F7FA),
         colorScheme: ColorScheme.fromSeed(seedColor: navy),
-        textTheme: GoogleFonts.cairoTextTheme(),
+        textTheme: ThemeData.light().textTheme,
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Colors.white,
