@@ -49,7 +49,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           path = Path("android/app/src/main/AndroidManifest.xml")
-          icon = Path("android/app/src/main/res/drawable/sindar_launcher_icon.png")
+          icon = Path("android/app/src/main/res/drawable/sindar_launcher_icon.webp")
           if not icon.exists():
               raise SystemExit("Tracked SINDAR launcher icon is missing")
           text = path.read_text()
