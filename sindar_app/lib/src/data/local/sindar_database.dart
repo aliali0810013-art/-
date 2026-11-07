@@ -18,7 +18,7 @@ class SindarDatabase {
     final root = await getDatabasesPath();
     final db = await openDatabase(
       p.join(root, 'sindar.db'),
-      version: 3,
+      version: 4,
       onConfigure: (database) async {
         await database.execute('PRAGMA foreign_keys = ON');
       },
@@ -34,6 +34,9 @@ class SindarDatabase {
         if (oldVersion < 3) {
           await _createEquipmentSchema(database);
         }
+        if (oldVersion < 4) {
+          await _upgradeEquipmentPricing(database);
+        }
       },
     );
     _database = db;
@@ -48,6 +51,12 @@ class SindarDatabase {
         name TEXT NOT NULL,
         serial_number TEXT,
         daily_rate REAL NOT NULL DEFAULT 0 CHECK(daily_rate >= 0),
+        hourly_rate REAL NOT NULL DEFAULT 0 CHECK(hourly_rate >= 0),
+        weekly_rate REAL NOT NULL DEFAULT 0 CHECK(weekly_rate >= 0),
+        monthly_rate REAL NOT NULL DEFAULT 0 CHECK(monthly_rate >= 0),
+        yearly_rate REAL NOT NULL DEFAULT 0 CHECK(yearly_rate >= 0),
+        purchase_price REAL NOT NULL DEFAULT 0 CHECK(purchase_price >= 0),
+        catalog_item_id INTEGER REFERENCES items(id),
         sale_price REAL NOT NULL DEFAULT 0 CHECK(sale_price >= 0),
         status TEXT NOT NULL DEFAULT 'available'
           CHECK(status IN ('available','rented','maintenance','sold')),
@@ -63,6 +72,10 @@ class SindarDatabase {
         document_id INTEGER NOT NULL UNIQUE REFERENCES documents(id),
         start_at TEXT NOT NULL,
         due_at TEXT NOT NULL,
+        billing_unit TEXT NOT NULL DEFAULT 'legacy',
+        billing_quantity INTEGER NOT NULL DEFAULT 1,
+        billing_rate REAL NOT NULL DEFAULT 0,
+        earned_amount REAL NOT NULL DEFAULT 0,
         returned_at TEXT,
         status TEXT NOT NULL DEFAULT 'active'
           CHECK(status IN ('active','returned')),
@@ -70,6 +83,32 @@ class SindarDatabase {
       )
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_equipment_rentals_equipment ON equipment_rentals(equipment_id,status)');
+  }
+
+  /// All historic rentals remain "legacy": they were previously recognized
+  /// in full on creation and must not be accrued for a second time.
+  Future<void> _upgradeEquipmentPricing(DatabaseExecutor db) async {
+    const columns = <String>[
+      'ALTER TABLE rental_equipment ADD COLUMN hourly_rate REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE rental_equipment ADD COLUMN weekly_rate REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE rental_equipment ADD COLUMN monthly_rate REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE rental_equipment ADD COLUMN yearly_rate REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE rental_equipment ADD COLUMN purchase_price REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE rental_equipment ADD COLUMN catalog_item_id INTEGER REFERENCES items(id)',
+      "ALTER TABLE equipment_rentals ADD COLUMN billing_unit TEXT NOT NULL DEFAULT 'legacy'",
+      'ALTER TABLE equipment_rentals ADD COLUMN billing_quantity INTEGER NOT NULL DEFAULT 1',
+      'ALTER TABLE equipment_rentals ADD COLUMN billing_rate REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE equipment_rentals ADD COLUMN earned_amount REAL NOT NULL DEFAULT 0',
+    ];
+    for (final statement in columns) {
+      await db.execute(statement);
+    }
+    for (final account in StandardChartOfAccounts.accounts) {
+      if (account.code == '2106' || account.code == '4104') {
+        await db.insert('accounts', account.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    }
   }
 
   Future<void> _createBaseSchema(DatabaseExecutor db) async {

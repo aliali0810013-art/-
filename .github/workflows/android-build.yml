@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - sindar-phase1
+      - sindar-rental-v2
   pull_request:
     branches:
       - main

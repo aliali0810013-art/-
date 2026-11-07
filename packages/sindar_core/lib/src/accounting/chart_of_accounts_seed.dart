@@ -26,6 +26,7 @@ abstract final class StandardChartOfAccounts {
     Account(code: '2103', nameAr: 'رواتب وأجور مستحقة', type: AccountType.liability, level: 3, isPosting: true, parentCode: '21'),
     Account(code: '2104', nameAr: 'مصروفات مستحقة', type: AccountType.liability, level: 3, isPosting: true, parentCode: '21'),
     Account(code: '2105', nameAr: 'دفعات مقدمة من العملاء', type: AccountType.liability, level: 3, isPosting: true, parentCode: '21'),
+    Account(code: '2106', nameAr: 'إيراد إيجارات غير مكتسب', type: AccountType.liability, level: 3, isPosting: true, parentCode: '21'),
     Account(code: '22', nameAr: 'الخصوم طويلة الأجل', type: AccountType.liability, level: 2, isPosting: false, parentCode: '2'),
     Account(code: '2201', nameAr: 'قروض طويلة الأجل', type: AccountType.liability, level: 3, isPosting: true, parentCode: '22'),
 
@@ -39,6 +40,7 @@ abstract final class StandardChartOfAccounts {
     Account(code: '4101', nameAr: 'إيرادات المبيعات', type: AccountType.revenue, level: 2, isPosting: true, parentCode: '4'),
     Account(code: '4102', nameAr: 'إيرادات الخدمات', type: AccountType.revenue, level: 2, isPosting: true, parentCode: '4'),
     Account(code: '4103', nameAr: 'إيرادات أخرى', type: AccountType.revenue, level: 2, isPosting: true, parentCode: '4'),
+    Account(code: '4104', nameAr: 'إيرادات تأجير المعدات', type: AccountType.revenue, level: 2, isPosting: true, parentCode: '4'),
     Account(code: '4191', nameAr: 'مردودات ومسموحات المبيعات', type: AccountType.revenue, level: 2, isPosting: true, parentCode: '4'),
 
     Account(code: '5', nameAr: 'المصروفات', type: AccountType.expense, level: 1, isPosting: false),
