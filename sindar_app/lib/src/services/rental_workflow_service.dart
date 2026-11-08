@@ -17,7 +17,8 @@ class RentalWorkflowService {
     final db = await SindarDatabase.instance.database;
     return db.rawQuery(
       'SELECT r.*, d.number, d.subtotal, d.vat_total, d.total, d.paid_amount, '
-      'p.name AS customer_name, e.name AS equipment_name, '
+      'p.name AS customer_name, p.vat_number AS customer_vat_number, '
+      'p.commercial_registration AS customer_cr, e.name AS equipment_name, '
       'e.code AS equipment_code, emp.name AS employee_name, '
       'COALESCE((SELECT SUM(x.amount) FROM rental_expenses x '
       'WHERE x.rental_id=r.id),0) AS expenses_total '
@@ -34,7 +35,8 @@ class RentalWorkflowService {
     final db = await SindarDatabase.instance.database;
     return db.rawQuery(
       'SELECT q.*, d.number, d.subtotal, d.vat_total, d.total, '
-      'p.name AS customer_name, e.name AS equipment_name, '
+      'p.name AS customer_name, p.vat_number AS customer_vat_number, '
+      'p.commercial_registration AS customer_cr, e.name AS equipment_name, '
       'e.code AS equipment_code, emp.name AS employee_name '
       'FROM rental_quotes q '
       'JOIN documents d ON d.id=q.document_id '
@@ -60,7 +62,7 @@ class RentalWorkflowService {
     final policy = await SindarDatabase.instance.getLicensePolicy();
     final quote = RentalQuote.create(
       period: period, quantity: quantity, unitRate: agreedRate, start: start);
-    final taxAllowed = policy.isTaxEnabled && policy.countryCode != 'YE';
+    final taxAllowed = policy.taxModeEnabled;
     final vatRate = taxInvoice && taxAllowed ? .15 : 0.0;
     final net = quote.total;
     final vat = double.parse((net * vatRate).toStringAsFixed(2));
@@ -137,7 +139,7 @@ class RentalWorkflowService {
     final policy = await SindarDatabase.instance.getLicensePolicy();
     final quote = RentalQuote.create(
       period: period, quantity: quantity, unitRate: agreedRate, start: start);
-    final taxAllowed = policy.isTaxEnabled && policy.countryCode != 'YE';
+    final taxAllowed = policy.taxModeEnabled;
     final vatRate = taxInvoice && taxAllowed ? .15 : 0.0;
     final net = quote.total;
     final vat = double.parse((net * vatRate).toStringAsFixed(2));
