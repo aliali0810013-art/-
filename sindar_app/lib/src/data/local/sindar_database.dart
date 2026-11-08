@@ -18,7 +18,7 @@ class SindarDatabase {
     final root = await getDatabasesPath();
     final db = await openDatabase(
       p.join(root, 'sindar.db'),
-      version: 5,
+      version: 6,
       onConfigure: (database) async {
         await database.execute('PRAGMA foreign_keys = ON');
       },
@@ -41,6 +41,9 @@ class SindarDatabase {
         if (oldVersion < 5) {
           await _upgradeRentalWorkflowV5(database);
         }
+        if (oldVersion < 6) {
+          await _upgradeEquipmentDetailsV6(database);
+        }
       },
     );
     _database = db;
@@ -54,6 +57,12 @@ class SindarDatabase {
         code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         serial_number TEXT,
+        brand TEXT,
+        model TEXT,
+        manufacture_year INTEGER,
+        location TEXT,
+        meter_hours REAL NOT NULL DEFAULT 0 CHECK(meter_hours >= 0),
+        condition_notes TEXT,
         daily_rate REAL NOT NULL DEFAULT 0 CHECK(daily_rate >= 0),
         hourly_rate REAL NOT NULL DEFAULT 0 CHECK(hourly_rate >= 0),
         weekly_rate REAL NOT NULL DEFAULT 0 CHECK(weekly_rate >= 0),
@@ -88,6 +97,25 @@ class SindarDatabase {
       )
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_equipment_rentals_equipment ON equipment_rentals(equipment_id,status)');
+  }
+
+  Future<void> _upgradeEquipmentDetailsV6(DatabaseExecutor db) async {
+    final columns = await db.rawQuery("PRAGMA table_info(rental_equipment)");
+    final names = columns.map((row) => row['name'] as String).toSet();
+    final additions = <String, String>{
+      'brand': 'ALTER TABLE rental_equipment ADD COLUMN brand TEXT',
+      'model': 'ALTER TABLE rental_equipment ADD COLUMN model TEXT',
+      'manufacture_year':
+          'ALTER TABLE rental_equipment ADD COLUMN manufacture_year INTEGER',
+      'location': 'ALTER TABLE rental_equipment ADD COLUMN location TEXT',
+      'meter_hours':
+          'ALTER TABLE rental_equipment ADD COLUMN meter_hours REAL NOT NULL DEFAULT 0',
+      'condition_notes':
+          'ALTER TABLE rental_equipment ADD COLUMN condition_notes TEXT',
+    };
+    for (final entry in additions.entries) {
+      if (!names.contains(entry.key)) await db.execute(entry.value);
+    }
   }
 
   Future<void> _createRentalWorkflowSchema(DatabaseExecutor db) async {
