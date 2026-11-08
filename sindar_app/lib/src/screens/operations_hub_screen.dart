@@ -135,6 +135,13 @@ class _OperationsHubScreenState extends State<OperationsHubScreen> {
                     initialType: DocumentType.financialClaim)),
                 ),
                 _ShortcutTile(
+                  icon: Icons.badge_outlined,
+                  title: 'عقد عمل',
+                  subtitle: 'عقد موظف قابل للحفظ والطباعة والمشاركة',
+                  onTap: () => _open(const DocumentStudioScreen(
+                    initialType: DocumentType.employmentContract)),
+                ),
+                _ShortcutTile(
                   icon: Icons.mail_outline_rounded,
                   title: 'خطاب رسمي',
                   subtitle: 'خطاب جاهز للطباعة والمشاركة',

@@ -412,6 +412,7 @@ class ErpRepository {
       'receipt_voucher' => DocumentType.receiptVoucher,
       'payment_voucher' => DocumentType.paymentVoucher,
       'official_letter' => DocumentType.officialLetter,
+      'employment_contract' => DocumentType.employmentContract,
       'financial_claim' => DocumentType.financialClaim,
       _ => DocumentType.commercialInvoice,
     };
@@ -900,6 +901,7 @@ class ErpRepository {
       DocumentType.financialClaim => 'financial_claim',
       DocumentType.customerStatement => 'customer_statement',
       DocumentType.supplierStatement => 'supplier_statement',
+      DocumentType.employmentContract => 'employment_contract',
       _ => throw const FormatException(
           'This document type must be saved from its operational screen',
         ),
@@ -909,6 +911,7 @@ class ErpRepository {
       DocumentType.financialClaim => 'CLM',
       DocumentType.customerStatement => 'CST',
       DocumentType.supplierStatement => 'SST',
+      DocumentType.employmentContract => 'EMP',
       _ => 'DOC',
     };
     final number = await _nextNumber(type, prefix);

@@ -255,6 +255,7 @@ class SindarDatabase {
       'journal_entry',
       'financial_claim',
       'official_letter',
+      'employment_contract',
       'payroll',
       'equipment_rental',
       'rental_quotation',

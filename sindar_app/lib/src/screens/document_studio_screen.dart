@@ -87,6 +87,7 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
         DocumentType.receiptVoucher,
         DocumentType.paymentVoucher,
         DocumentType.officialLetter,
+        DocumentType.employmentContract,
         DocumentType.financialClaim,
         DocumentType.customerStatement,
         DocumentType.supplierStatement,
@@ -370,6 +371,7 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
           ),
           const SizedBox(height: 18),
           if (_type == DocumentType.officialLetter ||
+              _type == DocumentType.employmentContract ||
               _type == DocumentType.financialClaim ||
               _type == DocumentType.customerStatement ||
               _type == DocumentType.supplierStatement) ...[

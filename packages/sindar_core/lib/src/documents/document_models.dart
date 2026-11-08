@@ -13,6 +13,7 @@ enum DocumentType {
   supplierStatement,
   purchaseInvoice,
   rentalContract,
+  employmentContract,
   payrollVoucher,
 }
 
@@ -39,6 +40,7 @@ extension DocumentTypeX on DocumentType {
         DocumentType.supplierStatement => 'كشف حساب مورد',
         DocumentType.purchaseInvoice => 'فاتورة مشتريات',
         DocumentType.rentalContract => 'عقد تأجير معدات',
+        DocumentType.employmentContract => 'عقد عمل',
         DocumentType.payrollVoucher => 'مسير رواتب',
       };
 }

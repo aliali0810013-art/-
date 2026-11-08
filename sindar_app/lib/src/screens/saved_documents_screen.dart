@@ -70,6 +70,7 @@ class _SavedDocumentsScreenState extends State<SavedDocumentsScreen> {
         'receipt_voucher' => 'سند قبض',
         'payment_voucher' => 'سند صرف',
         'official_letter' => 'خطاب رسمي',
+        'employment_contract' => 'عقد عمل',
         'financial_claim' => 'مطالبة مالية',
         'customer_statement' => 'كشف حساب عميل',
         'supplier_statement' => 'كشف حساب مورد',
