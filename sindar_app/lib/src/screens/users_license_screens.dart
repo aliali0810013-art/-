@@ -441,7 +441,7 @@ class _LicenseActivationScreenState extends State<LicenseActivationScreen> {
     _nameEn.text = settings['company_name_en'] ?? '';
     _commercialRegistration.text = settings['company_cr'] ?? '';
     _sellerVat.text =
-        policy.isTaxEnabled ? (settings['seller_vat_number'] ?? '') : '';
+        policy.taxModeEnabled ? (settings['seller_vat_number'] ?? '') : '';
     setState(() {
       _grant = grant;
       _policy = policy;
@@ -466,7 +466,7 @@ class _LicenseActivationScreenState extends State<LicenseActivationScreen> {
         nameAr: _nameAr.text,
         nameEn: _nameEn.text,
         commercialRegistration: _commercialRegistration.text,
-        sellerVatNumber: _policy.isTaxEnabled ? _sellerVat.text : null,
+        sellerVatNumber: _policy.taxModeEnabled ? _sellerVat.text : null,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -533,7 +533,7 @@ class _LicenseActivationScreenState extends State<LicenseActivationScreen> {
                     ),
                     Text('الحد الأقصى للمستخدمين: ${grant.policy.maxUsers}'),
                     Text(
-                      'الضريبة: ${grant.policy.isTaxEnabled ? 'مفعلة' : 'مقفلة'}',
+                      'الضريبة: ${grant.policy.taxModeEnabled ? 'مفعلة' : 'مقفلة'}',
                     ),
                     Text(
                       'الدولة/العملة: ${grant.policy.countryCode} / ${grant.policy.currencyCode} (${grant.policy.currencySymbol})',
@@ -562,7 +562,7 @@ class _LicenseActivationScreenState extends State<LicenseActivationScreen> {
             controller: _commercialRegistration,
             decoration: const InputDecoration(labelText: 'السجل التجاري'),
           ),
-          if (_policy.isTaxEnabled) ...[
+          if (_policy.taxModeEnabled) ...[
             const SizedBox(height: 8),
             TextField(
               controller: _sellerVat,

@@ -416,7 +416,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (!mounted) return;
     setState(() {
       _report = report;
-      _taxEnabled = policy.isTaxEnabled;
+      _taxEnabled = policy.taxModeEnabled;
       _canViewProfit = canViewProfit;
       _loading = false;
     });

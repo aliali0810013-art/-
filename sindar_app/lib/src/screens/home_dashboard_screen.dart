@@ -149,10 +149,17 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         module,
   ];
 
+  Future<void> _openOperationsHub() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const OperationsHubScreen()),
+    );
+    if (mounted) await _refresh();
+  }
+
   Future<void> _openModule(_ModuleData module) async {
     switch (module.id) {
       case 'operations':
-        return _openPage('documents', const OperationsHubScreen());
+        return _openOperationsHub();
       case 'customers':
         return _openPage('customers', const PartiesScreen(type: 'customer'));
       case 'suppliers':
@@ -183,9 +190,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   Future<void> _quickAction(int index) async {
     switch (index) {
       case 0:
-        return _openPage('documents', const OperationsHubScreen());
+        return _openOperationsHub();
       case 1:
-        return _openPage('documents', const OperationsHubScreen());
+        return _openOperationsHub();
       case 2:
         return _openPage('documents', const VoucherScreen(receipt: true));
       case 3:
@@ -204,7 +211,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         await _openPage('documents', const DocumentStudioScreen());
         break;
       case 2:
-        await _openPage('documents', const OperationsHubScreen());
+        await _openOperationsHub();
         break;
       case 3:
         await _openPage('reports', const ReportsScreen());

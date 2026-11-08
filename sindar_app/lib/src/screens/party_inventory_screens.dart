@@ -66,7 +66,7 @@ class _PartiesScreenState extends State<PartiesScreen> {
             children: [
               TextField(controller: name, decoration: const InputDecoration(labelText: 'الاسم')),
               const SizedBox(height: 8),
-              if (policy.isTaxEnabled)
+              if (policy.taxModeEnabled)
                 TextField(
                   controller: vat,
                   keyboardType: TextInputType.number,

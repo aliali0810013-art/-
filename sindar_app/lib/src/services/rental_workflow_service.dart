@@ -84,8 +84,12 @@ class RentalWorkflowService {
         'type': 'rental_quotation',
         'number': number,
         'date': now,
-        'party_id': customerId,
+                'party_id': customerId,
         'party_name': customer.first['name'],
+        'party_vat_number':
+            taxAllowed ? customer.first['vat_number'] : null,
+        'party_commercial_registration':
+            taxAllowed ? customer.first['commercial_registration'] : null,
         'payment_method': 'none',
         'status': 'draft',
         'subtotal': net,
@@ -168,8 +172,12 @@ class RentalWorkflowService {
         'type': 'equipment_rental',
         'number': number,
         'date': now,
-        'party_id': customerId,
+                'party_id': customerId,
         'party_name': customer.first['name'],
+        'party_vat_number':
+            taxAllowed ? customer.first['vat_number'] : null,
+        'party_commercial_registration':
+            taxAllowed ? customer.first['commercial_registration'] : null,
         'payment_method': 'credit',
         'status': 'approved',
         'subtotal': net,
