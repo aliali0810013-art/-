@@ -11,15 +11,15 @@ class RentalAccrualService {
     await db.transaction((txn) async {
       final rows = await txn.rawQuery(
         'SELECT r.id, r.document_id, r.start_at, r.due_at, '
-        'r.earned_amount, d.total FROM equipment_rentals r '
+        'r.earned_amount, d.subtotal FROM equipment_rentals r '
         'JOIN documents d ON d.id = r.document_id '
         "WHERE r.billing_unit != 'legacy' AND d.status != 'void' "
-        'AND r.earned_amount < d.total - 0.005',
+        'AND r.earned_amount < d.subtotal - 0.005',
       );
       for (final row in rows) {
         final start = DateTime.parse(row['start_at'] as String).toUtc();
         final due = DateTime.parse(row['due_at'] as String).toUtc();
-        final total = (row['total'] as num).toDouble();
+        final total = (row['subtotal'] as num).toDouble();
         var recorded = (row['earned_amount'] as num).toDouble();
         if (!instant.isAfter(start) || !due.isAfter(start)) continue;
 

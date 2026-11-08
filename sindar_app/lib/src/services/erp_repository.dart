@@ -405,6 +405,7 @@ class ErpRepository {
       'quotation' => DocumentType.quotation,
       'purchase_invoice' => DocumentType.purchaseInvoice,
       'equipment_rental' => DocumentType.rentalContract,
+      'rental_quotation' => DocumentType.quotation,
       'payroll' => DocumentType.payrollVoucher,
       'customer_statement' => DocumentType.customerStatement,
       'supplier_statement' => DocumentType.supplierStatement,
@@ -1478,12 +1479,20 @@ class ErpRepository {
     required bool receivable,
   }) async {
     final db = await SindarDatabase.instance.database;
-    final type = receivable ? 'sales_invoice' : 'purchase_invoice';
+    if (receivable) {
+      return db.rawQuery(
+        'SELECT *, total-paid_amount AS outstanding FROM documents '
+        "WHERE type IN ('sales_invoice','equipment_rental') "
+        'AND party_id=? AND total>paid_amount '
+        "AND status!='void' ORDER BY date",
+        [partyId],
+      );
+    }
     return db.rawQuery(
       'SELECT *, total-paid_amount AS outstanding FROM documents '
-      'WHERE type=? AND party_id=? AND total>paid_amount '
+      "WHERE type='purchase_invoice' AND party_id=? AND total>paid_amount "
       "AND status!='void' ORDER BY date",
-      [type, partyId],
+      [partyId],
     );
   }
 
@@ -1491,7 +1500,8 @@ class ErpRepository {
     final db = await SindarDatabase.instance.database;
     return db.rawQuery(
       "SELECT *, total-paid_amount AS outstanding FROM documents "
-      "WHERE type='sales_invoice' AND party_id=? AND total>paid_amount "
+      "WHERE type IN ('sales_invoice','equipment_rental') "
+      "AND party_id=? AND total>paid_amount "
       "AND status!='void' ORDER BY date",
       [customerId],
     );
@@ -1691,7 +1701,7 @@ class ErpRepository {
     );
     final salesVat = await scalar(
       "SELECT COALESCE(SUM(vat_total),0) FROM documents "
-      "WHERE type='sales_invoice' AND status!='void'",
+      "WHERE type IN ('sales_invoice','equipment_rental') AND status!='void'",
     );
     final purchaseVat = await scalar(
       "SELECT COALESCE(SUM(vat_total),0) FROM documents "
