@@ -80,8 +80,8 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
   }
 
   List<DocumentType> get _availableTypes => [
-        if (_policy.isTaxEnabled) DocumentType.simplifiedTaxInvoice,
-        if (_policy.isTaxEnabled) DocumentType.taxInvoice,
+        if (_policy.taxModeEnabled) DocumentType.simplifiedTaxInvoice,
+        if (_policy.taxModeEnabled) DocumentType.taxInvoice,
         DocumentType.commercialInvoice,
         DocumentType.quotation,
         DocumentType.receiptVoucher,
@@ -100,7 +100,7 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
             : line.description.text.trim(),
         quantity: double.tryParse(line.quantity.text) ?? 0,
         unitPrice: double.tryParse(line.price.text) ?? 0,
-        vatRate: _policy.isTaxEnabled && _type.isTaxInvoice ? .15 : 0,
+        vatRate: _policy.taxModeEnabled && _type.isTaxInvoice ? .15 : 0,
       );
     }).toList(growable: false);
 
@@ -112,13 +112,13 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
         nameAr: _company['company_name_ar'] ?? 'المنشأة',
         nameEn: _company['company_name_en'] ?? '',
         commercialRegistration: _company['company_cr'] ?? '',
-        vatNumber: _policy.isTaxEnabled ? _sellerVat.text.trim() : null,
+        vatNumber: _policy.taxModeEnabled ? _sellerVat.text.trim() : null,
       ),
       lines: lines,
       contacts: List.unmodifiable(_contacts),
       identity: _identity,
       partyName: _party.text.trim().isEmpty ? null : _party.text.trim(),
-      buyerVatNumber: _policy.isTaxEnabled && _buyerVat.text.trim().isNotEmpty
+      buyerVatNumber: _policy.taxModeEnabled && _buyerVat.text.trim().isNotEmpty
           ? _buyerVat.text.trim()
           : null,
       notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
@@ -285,7 +285,7 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
           TextField(controller: _number, decoration: const InputDecoration(labelText: 'رقم المستند')),
           const SizedBox(height: 12),
           TextField(controller: _party, decoration: const InputDecoration(labelText: 'العميل / المورد / الجهة')),
-          if (_policy.isTaxEnabled) ...[
+          if (_policy.taxModeEnabled) ...[
             const SizedBox(height: 12),
             TextField(
               controller: _sellerVat,
@@ -306,7 +306,7 @@ class _DocumentStudioScreenState extends State<DocumentStudioScreen> {
           for (var i = 0; i < _lines.length; i++)
             _LineEditorCard(
               line: _lines[i],
-              taxEnabled: _policy.isTaxEnabled && _type.isTaxInvoice,
+              taxEnabled: _policy.taxModeEnabled && _type.isTaxInvoice,
               onDelete: _lines.length == 1
                   ? null
                   : () => setState(() {
@@ -400,7 +400,7 @@ class _TaxStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = policy.isTaxEnabled;
+    final enabled = policy.taxModeEnabled;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -414,8 +414,10 @@ class _TaxStatus extends StatelessWidget {
           Expanded(
             child: Text(
               enabled
-                  ? 'الوضع الضريبي مفعّل من ترخيص المالك — ${policy.countryCode} / ${policy.currencyCode}'
-                  : 'الوضع الضريبي مقفل من ترخيص المالك. جميع حقول الضريبة مخفية والفواتير تجارية.',
+                  ? 'السعودية — وضع الفواتير الضريبية مفعّل • ${policy.moneyLabelAr}'
+                  : policy.isYemen
+                      ? 'اليمن — بدون ضريبة • الأسعار بـ ${policy.moneyLabelAr}'
+                      : 'الوضع الضريبي غير مفعّل • الأسعار بـ ${policy.moneyLabelAr}',
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),

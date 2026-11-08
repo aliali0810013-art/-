@@ -15,6 +15,24 @@ class LicensePolicy {
   final String currencySymbol;
   final int maxUsers;
 
+  bool get isYemen => countryCode == 'YE';
+  bool get isSaudiArabia => countryCode == 'SA';
+
+  /// Yemen workspace is always non-tax in SINDAR UI. Other countries honor
+  /// the licensed tax flag; Saudi tax mode exposes ZATCA-oriented invoices.
+  bool get taxModeEnabled => isTaxEnabled && !isYemen;
+
+  String get currencyNameAr => switch (currencyCode) {
+        'SAR' => 'ريال سعودي',
+        'YER' => 'ريال يمني',
+        'USD' => 'دولار أمريكي',
+        _ => currencyCode,
+      };
+
+  String get moneyLabelAr => currencySymbol.trim().isEmpty
+      ? currencyNameAr
+      : '$currencyNameAr ($currencySymbol)';
+
   static const lockedDefault = LicensePolicy(
     customerId: 'local',
     isTaxEnabled: false,

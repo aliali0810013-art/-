@@ -111,7 +111,7 @@ class _SalesScreenState extends State<SalesScreen> {
           description: item.name,
           quantity: qty,
           unitPrice: price,
-          vatRate: _policy.isTaxEnabled ? .15 : 0,
+          vatRate: _policy.taxModeEnabled ? .15 : 0,
         ),
       );
       _itemId = null;
@@ -126,7 +126,7 @@ class _SalesScreenState extends State<SalesScreen> {
     if (!await _requirePermission(context, 'sales', action)) return;
     try {
       final customer = _customer;
-      final buyerVat = _policy.isTaxEnabled
+      final buyerVat = _policy.taxModeEnabled
           ? (_buyerVat.text.trim().isEmpty
               ? customer?.vatNumber
               : _buyerVat.text.trim())
@@ -197,7 +197,7 @@ class _SalesScreenState extends State<SalesScreen> {
       _buyerVat.text = invoice['party_vat_number'] as String? ?? '';
       _buyerCr.text =
           invoice['party_commercial_registration'] as String? ?? '';
-      _b2b = _policy.isTaxEnabled &&
+      _b2b = _policy.taxModeEnabled &&
           _buyerVat.text.isNotEmpty &&
           _buyerCr.text.isNotEmpty;
       _lines
@@ -209,7 +209,7 @@ class _SalesScreenState extends State<SalesScreen> {
               description: row['description']! as String,
               quantity: (row['quantity'] as num).toDouble(),
               unitPrice: (row['unit_price'] as num).toDouble(),
-              vatRate: _policy.isTaxEnabled
+              vatRate: _policy.taxModeEnabled
                   ? (row['vat_rate'] as num).toDouble()
                   : 0,
             ),
@@ -261,7 +261,7 @@ class _SalesScreenState extends State<SalesScreen> {
         lines: _lines,
         customerId: customer?.id,
         customerName: customer?.name,
-        buyerVatNumber: _policy.isTaxEnabled
+        buyerVatNumber: _policy.taxModeEnabled
             ? (_buyerVat.text.trim().isEmpty
                 ? customer?.vatNumber
                 : _buyerVat.text.trim())
@@ -306,7 +306,7 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   double get _total => _lines.fold<double>(0, (sum, line) {
-        final vatRate = _policy.isTaxEnabled ? .15 : 0;
+        final vatRate = _policy.taxModeEnabled ? .15 : 0;
         return sum + line.net + (line.net * vatRate);
       });
 
@@ -320,7 +320,7 @@ class _SalesScreenState extends State<SalesScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (!_policy.isTaxEnabled)
+          if (!_policy.taxModeEnabled)
             const Card(
               child: ListTile(
                 leading: Icon(Icons.lock_outline),
@@ -402,7 +402,7 @@ class _SalesScreenState extends State<SalesScreen> {
               },
             ),
           ],
-          if (_policy.isTaxEnabled) ...[
+          if (_policy.taxModeEnabled) ...[
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               title: const Text('فاتورة ضريبية كاملة B2B'),
@@ -471,7 +471,7 @@ class _SalesScreenState extends State<SalesScreen> {
                 child: TextField(
                   controller: _price,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'السعر'),
+                  decoration: InputDecoration(labelText: 'السعر • ${_policy.currencyNameAr}'),
                 ),
               ),
               const SizedBox(width: 8),
@@ -538,7 +538,7 @@ class _SalesScreenState extends State<SalesScreen> {
               onPressed: _previewLastInvoice,
               icon: const Icon(Icons.qr_code_2_outlined),
               label: Text(
-                _policy.isTaxEnabled
+                _policy.taxModeEnabled
                     ? 'معاينة / طباعة الفاتورة مع QR ZATCA'
                     : 'معاينة / طباعة الفاتورة التجارية',
               ),
@@ -672,7 +672,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           description: item.name,
           quantity: qty,
           unitPrice: price,
-          vatRate: _policy.isTaxEnabled ? .15 : 0,
+          vatRate: _policy.taxModeEnabled ? .15 : 0,
         ),
       );
       _itemId = null;
@@ -705,7 +705,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             description: 'فاتورة مورد ممسوحة بالباركود',
             quantity: 1,
             unitPrice: net,
-            vatRate: _policy.isTaxEnabled ? rate : 0.0,
+            vatRate: _policy.taxModeEnabled ? rate : 0.0,
           ),
         );
       }
@@ -784,7 +784,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               controller: _manualSupplier,
               decoration: const InputDecoration(labelText: 'اسم المورد العابر'),
             ),
-          if (_policy.isTaxEnabled) ...[
+          if (_policy.taxModeEnabled) ...[
             const SizedBox(height: 8),
             TextField(
               controller: _supplierVat,
@@ -862,7 +862,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 child: TextField(
                   controller: _price,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'سعر الشراء'),
+                  decoration: InputDecoration(labelText: 'سعر الشراء • ${_policy.currencyNameAr}'),
                 ),
               ),
               const SizedBox(width: 8),

@@ -80,7 +80,7 @@ class CompanyProfile {
       nameAr: nameAr,
       nameEn: nameEn,
       commercialRegistration: commercialRegistration,
-      vatNumber: policy.isTaxEnabled ? vatNumber : null,
+      vatNumber: policy.taxModeEnabled ? vatNumber : null,
     );
   }
 }
@@ -107,7 +107,7 @@ class DocumentLine {
       description: description,
       quantity: quantity,
       unitPrice: unitPrice,
-      vatRate: policy.isTaxEnabled ? vatRate : 0,
+      vatRate: policy.taxModeEnabled ? vatRate : 0,
     );
   }
 }
@@ -154,7 +154,7 @@ class DocumentDraft {
   double get grandTotal => netTotal + vatTotal;
 
   DocumentDraft sanitizedFor(LicensePolicy policy) {
-    final effectiveType = !policy.isTaxEnabled && type.isInvoice
+    final effectiveType = !policy.taxModeEnabled && type.isInvoice
         ? DocumentType.commercialInvoice
         : type;
     return DocumentDraft(
@@ -166,9 +166,9 @@ class DocumentDraft {
       contacts: contacts,
       identity: identity,
       partyName: partyName,
-      buyerVatNumber: policy.isTaxEnabled ? buyerVatNumber : null,
+      buyerVatNumber: policy.taxModeEnabled ? buyerVatNumber : null,
       buyerCommercialRegistration:
-          policy.isTaxEnabled ? buyerCommercialRegistration : null,
+          policy.taxModeEnabled ? buyerCommercialRegistration : null,
       notes: notes,
     );
   }
