@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:sindar_core/sindar_core.dart';
 
 import '../data/local/sindar_database.dart';
+import '../services/business_profile_service.dart';
 import '../services/erp_repository.dart';
 import '../services/operational_models.dart';
 import '../services/session_controller.dart';
@@ -15,6 +16,7 @@ import 'document_studio_screen.dart';
 import 'saved_documents_screen.dart';
 import 'equipment_rental_screen.dart';
 import 'journal_voucher_screens.dart';
+import 'operations_hub_screen.dart';
 import 'party_inventory_screens.dart';
 import 'sales_purchase_screens.dart';
 import 'settings_hub_screen.dart';
@@ -30,12 +32,14 @@ class HomeDashboardScreen extends StatefulWidget {
 class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   DashboardSnapshot? _snapshot;
   LicensePolicy _policy = LicensePolicy.lockedDefault;
+  BusinessModuleConfig _business = const BusinessModuleConfig();
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   String _organizationName = 'المنشأة';
   bool _loading = true;
   int _navIndex = 0;
 
   static const _modules = <_ModuleData>[
+    _ModuleData('operations', 'مركز\nالعمليات', Icons.dashboard_customize_rounded, AppColors.gold, Color(0xFF0D3A72)),
     _ModuleData('customers', 'العملاء', Icons.groups_rounded, Color(0xFF0D3A72), AppColors.gold),
     _ModuleData('suppliers', 'الموردون', Icons.local_shipping_outlined, Color(0xFF0D3A72), AppColors.gold),
     _ModuleData('chart', 'شجرة\nالحسابات', Icons.account_tree_outlined, AppColors.gold, Color(0xFF0D3A72)),
@@ -43,7 +47,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     _ModuleData('reports', 'التقارير\nوالتحليلات', Icons.query_stats_rounded, Color(0xFF0D3A72), AppColors.gold),
     _ModuleData('purchases', 'المشتريات', Icons.shopping_cart_outlined, Color(0xFF0D3A72), AppColors.gold),
     _ModuleData('saved_documents', 'المستندات المحفوظة', Icons.folder_copy_outlined, Color(0xFF0D3A72), AppColors.gold),
-    _ModuleData('equipment', 'بيع وتأجير المعدات', Icons.handyman_outlined, Color(0xFF0D3A72), AppColors.gold),
+    _ModuleData('equipment', 'المعدات', Icons.handyman_outlined, Color(0xFF0D3A72), AppColors.gold),
     _ModuleData('inventory', 'المخزون\nوالأصناف', Icons.inventory_2_outlined, AppColors.gold, Color(0xFF0D3A72)),
     _ModuleData('assets', 'الأصول\nوالعهد', Icons.corporate_fare_rounded, Color(0xFF0D3A72), AppColors.gold),
     _ModuleData('payroll', 'الموظفون\nوالرواتب', Icons.business_center_outlined, Color(0xFF0D3A72), AppColors.gold),
@@ -61,6 +65,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     final policy = await SindarDatabase.instance.getLicensePolicy();
     final grant = await ErpRepository.instance.currentLicenseGrant();
     final company = await ErpRepository.instance.companySettings();
+    final business = await const BusinessProfileService().load();
     final snapshot = await ErpRepository.instance.dashboard(
       year: _month.year,
       month: _month.month,
@@ -69,6 +74,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     if (!mounted) return;
     setState(() {
       _policy = policy;
+      _business = business;
       _snapshot = snapshot;
       _organizationName = configuredName?.isNotEmpty == true
           ? configuredName!
@@ -133,8 +139,20 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     if (mounted) await _refresh();
   }
 
+  List<_ModuleData> get _visibleModules => [
+    for (final module in _modules)
+      if (!((module.id == 'equipment' && !_business.rentals) ||
+          (module.id == 'inventory' && !_business.sales) ||
+          (module.id == 'purchases' && !_business.purchases) ||
+          (module.id == 'suppliers' && !_business.purchases) ||
+          (module.id == 'payroll' && !_business.payroll)))
+        module,
+  ];
+
   Future<void> _openModule(_ModuleData module) async {
     switch (module.id) {
+      case 'operations':
+        return _openPage('documents', const OperationsHubScreen());
       case 'customers':
         return _openPage('customers', const PartiesScreen(type: 'customer'));
       case 'suppliers':
@@ -165,9 +183,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   Future<void> _quickAction(int index) async {
     switch (index) {
       case 0:
-        return _openPage('sales', const SalesScreen());
+        return _openPage('documents', const OperationsHubScreen());
       case 1:
-        return _openPage('sales', const SalesScreen());
+        return _openPage('documents', const OperationsHubScreen());
       case 2:
         return _openPage('documents', const VoucherScreen(receipt: true));
       case 3:
@@ -186,7 +204,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         await _openPage('documents', const DocumentStudioScreen());
         break;
       case 2:
-        await _openPage('sales', const SalesScreen());
+        await _openPage('documents', const OperationsHubScreen());
         break;
       case 3:
         await _openPage('reports', const ReportsScreen());
@@ -247,7 +265,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   _QuickActions(onTap: _quickAction),
                   const SizedBox(height: 8),
                   _ModulesGrid(
-                    modules: _modules,
+                    modules: _visibleModules,
                     onTap: _openModule,
                   ),
                   const SizedBox(height: 8),

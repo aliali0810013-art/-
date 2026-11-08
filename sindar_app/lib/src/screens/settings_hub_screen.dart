@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'business_profile_screen.dart';
 import 'cloud_sync_screen.dart';
 import 'users_license_screens.dart';
 
@@ -15,6 +16,17 @@ class SettingsHubScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _SettingsTile(
+            icon: Icons.tune_rounded,
+            title: 'طبيعة النشاط والأقسام',
+            subtitle: 'بيع • تأجير • خدمات • مشتريات • رواتب — أظهر ما تحتاجه فقط',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const BusinessProfileScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
           _SettingsTile(
             icon: Icons.cloud_sync_rounded,
             title: 'النسخ الاحتياطي والمزامنة',
