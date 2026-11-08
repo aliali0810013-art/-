@@ -235,7 +235,7 @@ class ErpRepository {
 
     final recentRows = await db.query(
       'documents',
-      where: "type IN ('sales_invoice','quotation','receipt_voucher','purchase_invoice')",
+      where: "type IN ('sales_invoice','service_invoice','equipment_rental','quotation','rental_quotation','receipt_voucher','purchase_invoice')",
       orderBy: 'date DESC, id DESC',
       limit: 4,
     );
@@ -1580,7 +1580,7 @@ class ErpRepository {
     if (receivable) {
       return db.rawQuery(
         'SELECT *, total-paid_amount AS outstanding FROM documents '
-        "WHERE type IN ('sales_invoice','equipment_rental') "
+        "WHERE type IN ('sales_invoice','service_invoice','equipment_rental') "
         'AND party_id=? AND total>paid_amount '
         "AND status!='void' ORDER BY date",
         [partyId],
@@ -1598,7 +1598,7 @@ class ErpRepository {
     final db = await SindarDatabase.instance.database;
     return db.rawQuery(
       "SELECT *, total-paid_amount AS outstanding FROM documents "
-      "WHERE type IN ('sales_invoice','equipment_rental') "
+      "WHERE type IN ('sales_invoice','service_invoice','equipment_rental') "
       "AND party_id=? AND total>paid_amount "
       "AND status!='void' ORDER BY date",
       [customerId],
@@ -1799,7 +1799,7 @@ class ErpRepository {
     );
     final salesVat = await scalar(
       "SELECT COALESCE(SUM(vat_total),0) FROM documents "
-      "WHERE type IN ('sales_invoice','equipment_rental') AND status!='void'",
+      "WHERE type IN ('sales_invoice','service_invoice','equipment_rental') AND status!='void'",
     );
     final purchaseVat = await scalar(
       "SELECT COALESCE(SUM(vat_total),0) FROM documents "
