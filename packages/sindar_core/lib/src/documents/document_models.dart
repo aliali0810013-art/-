@@ -153,6 +153,35 @@ class DocumentDraft {
   double get vatTotal => lines.fold(0, (sum, line) => sum + line.vat);
   double get grandTotal => netTotal + vatTotal;
 
+  DocumentDraft copyWith({
+    DocumentType? type,
+    String? number,
+    DateTime? date,
+    CompanyProfile? company,
+    List<DocumentLine>? lines,
+    List<ContactChannel>? contacts,
+    DocumentIdentity? identity,
+    String? partyName,
+    String? buyerVatNumber,
+    String? buyerCommercialRegistration,
+    String? notes,
+  }) {
+    return DocumentDraft(
+      type: type ?? this.type,
+      number: number ?? this.number,
+      date: date ?? this.date,
+      company: company ?? this.company,
+      lines: lines ?? this.lines,
+      contacts: contacts ?? this.contacts,
+      identity: identity ?? this.identity,
+      partyName: partyName ?? this.partyName,
+      buyerVatNumber: buyerVatNumber ?? this.buyerVatNumber,
+      buyerCommercialRegistration:
+          buyerCommercialRegistration ?? this.buyerCommercialRegistration,
+      notes: notes ?? this.notes,
+    );
+  }
+
   DocumentDraft sanitizedFor(LicensePolicy policy) {
     final effectiveType = !policy.taxModeEnabled && type.isInvoice
         ? DocumentType.commercialInvoice

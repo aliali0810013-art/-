@@ -132,7 +132,7 @@ class DocumentPdfService {
                 'السجل التجاري: ${company.commercialRegistration}',
                 style: const pw.TextStyle(fontSize: 8.5),
               ),
-              if (policy.isTaxEnabled && company.vatNumber != null)
+              if (policy.taxModeEnabled && company.vatNumber != null)
                 pw.Text(
                   'الرقم الضريبي: ${company.vatNumber}',
                   style: const pw.TextStyle(fontSize: 8.5),
@@ -205,7 +205,7 @@ class DocumentPdfService {
       child: pw.Row(
         children: [
           pw.Expanded(child: pw.Text('العميل/الجهة: ${draft.partyName ?? '-'}')),
-          if (policy.isTaxEnabled &&
+          if (policy.taxModeEnabled &&
               (draft.buyerVatNumber != null ||
                   draft.buyerCommercialRegistration != null))
             pw.Expanded(
@@ -279,7 +279,7 @@ class DocumentPdfService {
         child: pw.Column(
           children: [
             _totalRow('الإجمالي قبل الضريبة', draft.netTotal, symbol),
-            if (policy.isTaxEnabled)
+            if (policy.taxModeEnabled)
               _totalRow('ضريبة القيمة المضافة', draft.vatTotal, symbol),
             pw.Divider(color: primary),
             _totalRow('الإجمالي النهائي', draft.grandTotal, symbol, font: bold),
@@ -356,7 +356,7 @@ class DocumentPdfService {
   }
 
   String _invoiceQr(DocumentDraft draft, LicensePolicy policy) {
-    if (policy.isTaxEnabled && draft.type.isTaxInvoice) {
+    if (policy.taxModeEnabled && draft.type.isTaxInvoice) {
       final vat = draft.company.vatNumber;
       if (vat == null || vat.isEmpty) {
         throw StateError('Tax mode requires a seller VAT number before generating a tax invoice');
