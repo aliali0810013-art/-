@@ -116,6 +116,11 @@ class SindarDatabase {
     for (final entry in additions.entries) {
       if (!names.contains(entry.key)) await db.execute(entry.value);
     }
+    await db.insert(
+      'document_sequences',
+      {'document_type': 'service_invoice', 'next_number': 1},
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
   }
 
   Future<void> _createRentalWorkflowSchema(DatabaseExecutor db) async {
@@ -242,6 +247,7 @@ class SindarDatabase {
 
     const sequenceTypes = [
       'sales_invoice',
+      'service_invoice',
       'purchase_invoice',
       'quotation',
       'receipt_voucher',

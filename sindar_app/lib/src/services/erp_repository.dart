@@ -330,7 +330,7 @@ class ErpRepository {
     if (nameAr.trim().isEmpty) {
       throw const FormatException('الاسم التجاري العربي مطلوب');
     }
-    if (policy.isTaxEnabled &&
+    if (policy.taxModeEnabled &&
         vat.isNotEmpty &&
         (vat.length != 15 || int.tryParse(vat) == null)) {
       throw const FormatException(
@@ -341,7 +341,7 @@ class ErpRepository {
       'company_name_ar': nameAr.trim(),
       'company_name_en': nameEn.trim(),
       'company_cr': commercialRegistration.trim(),
-      'seller_vat_number': policy.isTaxEnabled ? vat : '',
+      'seller_vat_number': policy.taxModeEnabled ? vat : '',
     };
     for (final entry in values.entries) {
       await SindarDatabase.instance.saveSetting(entry.key, entry.value);
@@ -397,7 +397,7 @@ class ErpRepository {
     final rawType = row['type']! as String;
 
     final type = switch (rawType) {
-      'sales_invoice' => policy.isTaxEnabled
+      'sales_invoice' || 'service_invoice' => policy.taxModeEnabled
           ? ((row['party_vat_number'] as String?)?.isNotEmpty == true
               ? DocumentType.taxInvoice
               : DocumentType.simplifiedTaxInvoice)
@@ -424,7 +424,7 @@ class ErpRepository {
         nameAr: company['company_name_ar'] ?? 'المنشأة',
         nameEn: company['company_name_en'] ?? '',
         commercialRegistration: company['company_cr'] ?? '',
-        vatNumber: policy.isTaxEnabled
+        vatNumber: policy.taxModeEnabled
             ? _emptyToNull(company['seller_vat_number'])
             : null,
       ),
@@ -434,7 +434,7 @@ class ErpRepository {
             description: line['description']! as String,
             quantity: (line['quantity'] as num).toDouble(),
             unitPrice: (line['unit_price'] as num).toDouble(),
-            vatRate: policy.isTaxEnabled
+            vatRate: policy.taxModeEnabled
                 ? (line['vat_rate'] as num).toDouble()
                 : 0,
           ),
@@ -445,10 +445,10 @@ class ErpRepository {
       contacts: contacts,
       identity: const DocumentIdentity(),
       partyName: row['party_name'] as String?,
-      buyerVatNumber: policy.isTaxEnabled
+      buyerVatNumber: policy.taxModeEnabled
           ? row['party_vat_number'] as String?
           : null,
-      buyerCommercialRegistration: policy.isTaxEnabled
+      buyerCommercialRegistration: policy.taxModeEnabled
           ? row['party_commercial_registration'] as String?
           : null,
       notes: row['notes'] as String?,
@@ -484,7 +484,7 @@ class ErpRepository {
     }
     final policy = await SindarDatabase.instance.getLicensePolicy();
     final vat = vatNumber?.trim() ?? '';
-    if (policy.isTaxEnabled &&
+    if (policy.taxModeEnabled &&
         vat.isNotEmpty &&
         (vat.length != 15 || int.tryParse(vat) == null)) {
       throw const FormatException('الرقم الضريبي يجب أن يكون 15 رقماً');
@@ -495,7 +495,7 @@ class ErpRepository {
       final id = await txn.insert('parties', {
         'type': type,
         'name': name.trim(),
-        'vat_number': policy.isTaxEnabled ? _emptyToNull(vatNumber) : null,
+        'vat_number': policy.taxModeEnabled ? _emptyToNull(vatNumber) : null,
         'commercial_registration': _emptyToNull(commercialRegistration),
         'phone': _emptyToNull(phone),
         'credit_limit': creditLimit,
@@ -628,6 +628,104 @@ class ErpRepository {
     if (changed != 1) throw const FormatException('الصنف غير موجود');
   }
 
+  Future<int> createServiceInvoice({
+    required String description,
+    double quantity = 1,
+    required double unitPrice,
+    required bool onCredit,
+    required bool applyTax,
+    int? customerId,
+    String? customerName,
+    String? buyerVatNumber,
+    String? buyerCommercialRegistration,
+    String settlementAccountCode = '1101',
+  }) async {
+    if (description.trim().isEmpty || quantity <= 0 || unitPrice < 0) {
+      throw const FormatException('بيانات الخدمة أو السعر غير صحيحة');
+    }
+    if (onCredit && customerId == null) {
+      throw const FormatException('الخدمة الآجلة تتطلب عميلاً مسجلاً');
+    }
+    if (!onCredit &&
+        settlementAccountCode != '1101' &&
+        settlementAccountCode != '1102') {
+      throw const FormatException('اختر الصندوق أو البنك');
+    }
+    final policy = await SindarDatabase.instance.getLicensePolicy();
+    final vatRate = applyTax && policy.taxModeEnabled ? .15 : 0.0;
+    final net = double.parse((quantity * unitPrice).toStringAsFixed(2));
+    final vat = double.parse((net * vatRate).toStringAsFixed(2));
+    final total = net + vat;
+    final number = await _nextNumber('service_invoice', 'SRV');
+    final db = await SindarDatabase.instance.database;
+    final now = DateTime.now().toUtc();
+
+    return db.transaction((txn) async {
+      final id = await txn.insert('documents', {
+        'type': 'service_invoice',
+        'number': number,
+        'date': now.toIso8601String(),
+        'party_id': customerId,
+        'party_name': _emptyToNull(customerName),
+        'party_vat_number':
+            policy.taxModeEnabled ? _emptyToNull(buyerVatNumber) : null,
+        'party_commercial_registration':
+            policy.taxModeEnabled ? _emptyToNull(buyerCommercialRegistration) : null,
+        'payment_method': onCredit
+            ? 'credit'
+            : (settlementAccountCode == '1102' ? 'bank' : 'cash'),
+        'status': 'approved',
+        'subtotal': net,
+        'vat_total': vat,
+        'total': total,
+        'paid_amount': onCredit ? 0 : total,
+        'currency_code': policy.currencyCode,
+        'created_at': now.toIso8601String(),
+      });
+      await txn.insert('document_lines', {
+        'document_id': id,
+        'description': description.trim(),
+        'quantity': quantity,
+        'unit_price': unitPrice,
+        'vat_rate': vatRate,
+        'line_net': net,
+        'line_vat': vat,
+        'line_total': total,
+      });
+      await _postJournalTxn(
+        txn,
+        AutomaticPosting.service(
+          date: now,
+          referenceId: id,
+          net: net,
+          vat: vat,
+          onCredit: onCredit,
+          settlementAccountCode: settlementAccountCode,
+        ),
+      );
+      if (onCredit && customerId != null) {
+        await txn.insert('party_movements', {
+          'party_id': customerId,
+          'date': now.toIso8601String(),
+          'reference': number,
+          'operation_type': 'فاتورة خدمات',
+          'debit': total,
+          'credit': 0,
+          'document_id': id,
+        });
+      }
+      return id;
+    });
+  }
+
+  Future<List<Map<String, Object?>>> listServiceInvoices({int limit = 100}) async {
+    final db = await SindarDatabase.instance.database;
+    return db.query('documents',
+      where: "type='service_invoice'",
+      orderBy: 'date DESC, id DESC',
+      limit: limit);
+  }
+
   Future<int> createSalesInvoice({
     required List<InvoiceLineInput> lines,
     required bool onCredit,
@@ -662,7 +760,7 @@ class ErpRepository {
           description: line.description,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
-          vatRate: policy.isTaxEnabled ? 0.15 : 0,
+          vatRate: policy.taxModeEnabled ? 0.15 : 0,
         ),
     ];
     final net = normalized.fold<double>(0, (sum, line) => sum + line.net);
@@ -670,7 +768,7 @@ class ErpRepository {
     final total = net + vat;
 
     return db.transaction((txn) async {
-      if (b2b && policy.isTaxEnabled) {
+      if (b2b && policy.taxModeEnabled) {
         final vatValue = buyerVatNumber?.trim() ?? '';
         final crValue = buyerCommercialRegistration?.trim() ?? '';
         if (vatValue.length != 15 || int.tryParse(vatValue) == null) {
@@ -712,7 +810,7 @@ class ErpRepository {
         'party_id': customerId,
         'party_name': _emptyToNull(customerName),
         'party_vat_number':
-            policy.isTaxEnabled ? _emptyToNull(buyerVatNumber) : null,
+            policy.taxModeEnabled ? _emptyToNull(buyerVatNumber) : null,
         'party_commercial_registration': b2b
             ? _emptyToNull(buyerCommercialRegistration)
             : null,
@@ -825,8 +923,8 @@ class ErpRepository {
         'date': safe.date.toUtc().toIso8601String(),
         'party_name': _emptyToNull(safe.partyName),
         'party_vat_number':
-            policy.isTaxEnabled ? _emptyToNull(safe.buyerVatNumber) : null,
-        'party_commercial_registration': policy.isTaxEnabled
+            policy.taxModeEnabled ? _emptyToNull(safe.buyerVatNumber) : null,
+        'party_commercial_registration': policy.taxModeEnabled
             ? _emptyToNull(safe.buyerCommercialRegistration)
             : null,
         'payment_method': 'none',
@@ -903,7 +1001,7 @@ class ErpRepository {
           description: line.description,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
-          vatRate: policy.isTaxEnabled ? 0.15 : 0,
+          vatRate: policy.taxModeEnabled ? 0.15 : 0,
         ),
     ];
     final net = normalized.fold<double>(0, (sum, line) => sum + line.net);
@@ -929,7 +1027,7 @@ class ErpRepository {
         );
       }
 
-      if (b2b && policy.isTaxEnabled) {
+      if (b2b && policy.taxModeEnabled) {
         final vatValue = buyerVatNumber?.trim() ?? '';
         final crValue = buyerCommercialRegistration?.trim() ?? '';
         if (vatValue.length != 15 || int.tryParse(vatValue) == null) {
@@ -1009,7 +1107,7 @@ class ErpRepository {
           'party_id': customerId,
           'party_name': _emptyToNull(customerName),
           'party_vat_number':
-              policy.isTaxEnabled ? _emptyToNull(buyerVatNumber) : null,
+              policy.taxModeEnabled ? _emptyToNull(buyerVatNumber) : null,
           'party_commercial_registration': b2b
               ? _emptyToNull(buyerCommercialRegistration)
               : null,
@@ -1105,7 +1203,7 @@ class ErpRepository {
           description: line.description,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
-          vatRate: policy.isTaxEnabled ? 0.15 : 0,
+          vatRate: policy.taxModeEnabled ? 0.15 : 0,
         ),
     ];
     final net = normalized.fold<double>(0, (sum, line) => sum + line.net);
@@ -1119,8 +1217,8 @@ class ErpRepository {
         'party_id': customerId,
         'party_name': _emptyToNull(customerName),
         'party_vat_number':
-            policy.isTaxEnabled ? _emptyToNull(buyerVatNumber) : null,
-        'party_commercial_registration': policy.isTaxEnabled
+            policy.taxModeEnabled ? _emptyToNull(buyerVatNumber) : null,
+        'party_commercial_registration': policy.taxModeEnabled
             ? _emptyToNull(buyerCommercialRegistration)
             : null,
         'payment_method': 'cash',
@@ -1215,7 +1313,7 @@ class ErpRepository {
 
     final policy = await SindarDatabase.instance.getLicensePolicy();
     final supplierVat = supplierVatNumber?.trim() ?? '';
-    if (policy.isTaxEnabled &&
+    if (policy.taxModeEnabled &&
         supplierVat.isNotEmpty &&
         (supplierVat.length != 15 || int.tryParse(supplierVat) == null)) {
       throw const FormatException('Supplier VAT must contain 15 digits');
@@ -1231,7 +1329,7 @@ class ErpRepository {
           description: line.description,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
-          vatRate: policy.isTaxEnabled ? line.vatRate : 0,
+          vatRate: policy.taxModeEnabled ? line.vatRate : 0,
         ),
     ];
     final net = normalized.fold<double>(0, (sum, line) => sum + line.net);
@@ -1246,7 +1344,7 @@ class ErpRepository {
         'party_id': supplierId,
         'party_name': _emptyToNull(supplierName),
         'party_vat_number':
-            policy.isTaxEnabled ? _emptyToNull(supplierVatNumber) : null,
+            policy.taxModeEnabled ? _emptyToNull(supplierVatNumber) : null,
         'payment_method': onCredit
             ? 'credit'
             : (settlementAccountCode == '1102' ? 'bank' : 'cash'),
@@ -1823,7 +1921,7 @@ class ErpRepository {
       throw const FormatException('الترخيص موقوف أو منتهي');
     }
     await SindarDatabase.instance.saveLicensePolicy(grant.policy);
-    if (!grant.policy.isTaxEnabled) {
+    if (!grant.policy.taxModeEnabled) {
       await SindarDatabase.instance.saveSetting('seller_vat_number', '');
     }
     await SindarDatabase.instance.saveSetting(

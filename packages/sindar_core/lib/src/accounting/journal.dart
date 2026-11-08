@@ -118,6 +118,31 @@ abstract final class AutomaticPosting {
         ],
       );
 
+  static JournalDraft service({
+    required DateTime date,
+    required int referenceId,
+    required double net,
+    required double vat,
+    required bool onCredit,
+    String settlementAccountCode = '1101',
+  }) {
+    final total = net + vat;
+    return JournalDraft(
+      date: date,
+      description: 'ترحيل فاتورة خدمات',
+      referenceType: 'service_invoice',
+      referenceId: referenceId,
+      lines: [
+        JournalLineDraft(
+          accountCode: onCredit ? '1103' : settlementAccountCode,
+          debit: total,
+        ),
+        JournalLineDraft(accountCode: '4102', credit: net),
+        if (vat > 0) JournalLineDraft(accountCode: '2102', credit: vat),
+      ],
+    );
+  }
+
   static JournalDraft payment({
     required DateTime date,
     required int referenceId,
