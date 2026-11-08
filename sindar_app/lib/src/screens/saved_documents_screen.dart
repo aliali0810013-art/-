@@ -63,8 +63,10 @@ class _SavedDocumentsScreenState extends State<SavedDocumentsScreen> {
 
   static String typeLabel(String type) => switch (type) {
         'sales_invoice' => 'فاتورة مبيعات',
+        'service_invoice' => 'فاتورة خدمات',
         'purchase_invoice' => 'فاتورة مشتريات',
         'quotation' => 'عرض سعر',
+        'rental_quotation' => 'عرض سعر تأجير',
         'receipt_voucher' => 'سند قبض',
         'payment_voucher' => 'سند صرف',
         'official_letter' => 'خطاب رسمي',
