@@ -77,6 +77,93 @@ class _RentalOperationsScreenState extends State<RentalOperationsScreen> {
     return (equipment[key] as num?)?.toDouble() ?? 0;
   }
 
+  Future<int?> _quickAddCustomer(BuildContext dialogContext) async {
+    final name = TextEditingController();
+    final phone = TextEditingController();
+    try {
+      final accepted = await showDialog<bool>(
+        context: dialogContext,
+        builder: (context) => AlertDialog(
+          title: const Text('إضافة عميل سريع'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: name,
+              decoration: const InputDecoration(labelText: 'اسم العميل *'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: phone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'رقم الهاتف'),
+            ),
+          ]),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء')),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('إضافة')),
+          ],
+        ),
+      );
+      if (accepted != true || name.text.trim().isEmpty) return null;
+      final id = await ErpRepository.instance.addParty(
+        type: 'customer', name: name.text, phone: phone.text);
+      final customers = await ErpRepository.instance.listParties('customer');
+      if (mounted) setState(() => _customers = customers);
+      return id;
+    } finally {
+      name.dispose();
+      phone.dispose();
+    }
+  }
+
+  Future<int?> _quickAddEmployee(BuildContext dialogContext) async {
+    final name = TextEditingController();
+    final salary = TextEditingController(text: '0');
+    try {
+      final accepted = await showDialog<bool>(
+        context: dialogContext,
+        builder: (context) => AlertDialog(
+          title: const Text('إضافة موظف سريع'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: name,
+              decoration: const InputDecoration(labelText: 'اسم الموظف *'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: salary,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'الراتب الأساسي',
+                suffixText: _policy.currencySymbol),
+            ),
+          ]),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء')),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('إضافة')),
+          ],
+        ),
+      );
+      if (accepted != true || name.text.trim().isEmpty) return null;
+      final basic = double.tryParse(salary.text.trim()) ?? 0;
+      final id = await ErpRepository.instance.addEmployee(
+        name: name.text, basicSalary: basic);
+      final employees = await ErpRepository.instance.listEmployees();
+      if (mounted) setState(() => _employees = employees);
+      return id;
+    } finally {
+      name.dispose();
+      salary.dispose();
+    }
+  }
+
   Future<void> _createOperation({required bool quoteOnly}) async {
     if (!await _can(quoteOnly ? 'add' : 'approve') || !mounted) return;
     if (_customers.isEmpty) {
@@ -143,16 +230,29 @@ class _RentalOperationsScreenState extends State<RentalOperationsScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      DropdownButtonFormField<int>(
-                        isExpanded: true,
-                        initialValue: customerId,
-                        decoration: const InputDecoration(labelText: 'العميل *'),
-                        items: [
-                          for (final c in _customers)
-                            DropdownMenuItem(value: c.id, child: Text(c.name)),
-                        ],
-                        onChanged: (v) => update(() => customerId = v),
-                      ),
+                      Row(children: [
+                        Expanded(child: DropdownButtonFormField<int>(
+                          isExpanded: true,
+                          initialValue: customerId,
+                          decoration: const InputDecoration(labelText: 'العميل *'),
+                          items: [
+                            for (final c in _customers)
+                              DropdownMenuItem(value: c.id, child: Text(c.name)),
+                          ],
+                          onChanged: (v) => update(() => customerId = v),
+                        )),
+                        const SizedBox(width: 6),
+                        IconButton.filledTonal(
+                          tooltip: 'إضافة عميل الآن',
+                          onPressed: () async {
+                            final id = await _quickAddCustomer(dialogContext);
+                            if (id != null && dialogContext.mounted) {
+                              update(() => customerId = id);
+                            }
+                          },
+                          icon: const Icon(Icons.person_add_alt_1),
+                        ),
+                      ]),
                       const SizedBox(height: 10),
                       DropdownButtonFormField<int>(
                         isExpanded: true,
@@ -175,21 +275,34 @@ class _RentalOperationsScreenState extends State<RentalOperationsScreen> {
                         }),
                       ),
                       const SizedBox(height: 10),
-                      DropdownButtonFormField<int?>(
-                        isExpanded: true,
-                        initialValue: employeeId,
-                        decoration: const InputDecoration(
-                          labelText: 'الموظف المسؤول عن التسليم / المتابعة'),
-                        items: [
-                          const DropdownMenuItem<int?>(
-                            value: null, child: Text('بدون تحديد موظف')),
-                          for (final e in _employees)
-                            DropdownMenuItem<int?>(
-                              value: e['id'] as int,
-                              child: Text(e['name'] as String)),
-                        ],
-                        onChanged: (v) => update(() => employeeId = v),
-                      ),
+                      Row(children: [
+                        Expanded(child: DropdownButtonFormField<int?>(
+                          isExpanded: true,
+                          initialValue: employeeId,
+                          decoration: const InputDecoration(
+                            labelText: 'الموظف المسؤول عن التسليم / المتابعة'),
+                          items: [
+                            const DropdownMenuItem<int?>(
+                              value: null, child: Text('بدون تحديد موظف')),
+                            for (final e in _employees)
+                              DropdownMenuItem<int?>(
+                                value: e['id'] as int,
+                                child: Text(e['name'] as String)),
+                          ],
+                          onChanged: (v) => update(() => employeeId = v),
+                        )),
+                        const SizedBox(width: 6),
+                        IconButton.filledTonal(
+                          tooltip: 'إضافة موظف الآن',
+                          onPressed: () async {
+                            final id = await _quickAddEmployee(dialogContext);
+                            if (id != null && dialogContext.mounted) {
+                              update(() => employeeId = id);
+                            }
+                          },
+                          icon: const Icon(Icons.badge_outlined),
+                        ),
+                      ]),
                       const SizedBox(height: 10),
                       Row(children: [
                         Expanded(
