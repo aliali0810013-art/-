@@ -987,7 +987,10 @@ class _RecentRow extends StatelessWidget {
 
   _OperationMeta _operationMeta(String type) => switch (type) {
         'sales_invoice' => const _OperationMeta('فاتورة مبيعات', Icons.receipt_long_outlined, AppColors.blue),
+        'service_invoice' => const _OperationMeta('فاتورة خدمات', Icons.design_services_outlined, AppColors.purple),
+        'equipment_rental' => const _OperationMeta('عقد تأجير', Icons.handyman_outlined, AppColors.gold),
         'quotation' => const _OperationMeta('عرض سعر', Icons.description_outlined, AppColors.purple),
+        'rental_quotation' => const _OperationMeta('عرض تأجير', Icons.request_quote_outlined, AppColors.gold),
         'receipt_voucher' => const _OperationMeta('سند قبض', Icons.payments_outlined, AppColors.green),
         'purchase_invoice' => const _OperationMeta('مشتريات', Icons.shopping_cart_outlined, Colors.orange),
         _ => const _OperationMeta('عملية', Icons.description_outlined, AppColors.navy2),
