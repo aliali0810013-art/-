@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
+import 'package:sindar_core/sindar_core.dart';
 
 import '../data/local/sindar_database.dart';
 import '../services/document_pdf_service.dart';

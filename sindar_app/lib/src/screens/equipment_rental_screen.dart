@@ -397,7 +397,9 @@ class _EquipmentRentalScreenState extends State<EquipmentRentalScreen> {
                               ),
                             ),
                           ),
-                          ButtonBar(
+                          OverflowBar(
+                            spacing: 8,
+                            alignment: MainAxisAlignment.end,
                             children: [
                               TextButton.icon(
                                 onPressed: item['status'] == 'rented' ||
