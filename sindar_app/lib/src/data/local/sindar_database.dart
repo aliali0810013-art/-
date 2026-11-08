@@ -18,7 +18,7 @@ class SindarDatabase {
     final root = await getDatabasesPath();
     final db = await openDatabase(
       p.join(root, 'sindar.db'),
-      version: 4,
+      version: 5,
       onConfigure: (database) async {
         await database.execute('PRAGMA foreign_keys = ON');
       },
@@ -26,6 +26,7 @@ class SindarDatabase {
         await _createBaseSchema(database);
         await _createOperationalSchema(database);
         await _createEquipmentSchema(database);
+        await _createRentalWorkflowSchema(database);
       },
       onUpgrade: (database, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -36,6 +37,9 @@ class SindarDatabase {
           await _ensureNewRentalAccounts(database);
         } else if (oldVersion < 4) {
           await _upgradeEquipmentPricing(database);
+        }
+        if (oldVersion < 5) {
+          await _upgradeRentalWorkflowV5(database);
         }
       },
     );
@@ -69,6 +73,7 @@ class SindarDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         equipment_id INTEGER NOT NULL REFERENCES rental_equipment(id),
         customer_id INTEGER NOT NULL REFERENCES parties(id),
+        employee_id INTEGER REFERENCES employees(id),
         document_id INTEGER NOT NULL UNIQUE REFERENCES documents(id),
         start_at TEXT NOT NULL,
         due_at TEXT NOT NULL,
@@ -83,6 +88,64 @@ class SindarDatabase {
       )
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_equipment_rentals_equipment ON equipment_rentals(equipment_id,status)');
+  }
+
+  Future<void> _createRentalWorkflowSchema(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS rental_quotes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_id INTEGER NOT NULL UNIQUE REFERENCES documents(id),
+        equipment_id INTEGER NOT NULL REFERENCES rental_equipment(id),
+        customer_id INTEGER NOT NULL REFERENCES parties(id),
+        employee_id INTEGER REFERENCES employees(id),
+        start_at TEXT NOT NULL,
+        due_at TEXT NOT NULL,
+        billing_unit TEXT NOT NULL,
+        billing_quantity INTEGER NOT NULL CHECK(billing_quantity > 0),
+        billing_rate REAL NOT NULL CHECK(billing_rate >= 0),
+        status TEXT NOT NULL DEFAULT 'open'
+          CHECK(status IN ('open','converted','cancelled','expired')),
+        converted_document_id INTEGER REFERENCES documents(id),
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS rental_expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rental_id INTEGER NOT NULL REFERENCES equipment_rentals(id),
+        document_id INTEGER NOT NULL UNIQUE REFERENCES documents(id),
+        employee_id INTEGER REFERENCES employees(id),
+        description TEXT NOT NULL,
+        amount REAL NOT NULL CHECK(amount > 0),
+        expense_account TEXT NOT NULL DEFAULT '5204',
+        settlement_account TEXT NOT NULL DEFAULT '1101',
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_rental_quotes_equipment '
+      'ON rental_quotes(equipment_id,status)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_rental_expenses_rental '
+      'ON rental_expenses(rental_id)',
+    );
+  }
+
+  Future<void> _upgradeRentalWorkflowV5(DatabaseExecutor db) async {
+    final columns = await db.rawQuery("PRAGMA table_info(equipment_rentals)");
+    final names = columns.map((row) => row['name'] as String).toSet();
+    if (!names.contains('employee_id')) {
+      await db.execute(
+        'ALTER TABLE equipment_rentals ADD COLUMN employee_id INTEGER REFERENCES employees(id)',
+      );
+    }
+    await _createRentalWorkflowSchema(db);
+    await db.insert(
+      'document_sequences',
+      {'document_type': 'rental_quotation', 'next_number': 1},
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
   }
 
   /// All historic rentals remain "legacy": they were previously recognized
@@ -160,6 +223,7 @@ class SindarDatabase {
       'official_letter',
       'payroll',
       'equipment_rental',
+      'rental_quotation',
     ];
     for (final type in sequenceTypes) {
       await db.insert(
